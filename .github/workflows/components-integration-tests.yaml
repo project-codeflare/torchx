@@ -8,16 +8,22 @@ on:
 
 jobs:
   components-launch:
-    runs-on: ubuntu-20.04
     strategy:
       matrix:
-       include:
-         - scheduler: "aws_batch"
-         - scheduler: "kubernetes"
-         - scheduler: "local_cwd"
-         - scheduler: "local_docker"
-         - scheduler: "ray"
+        include:
+          - scheduler: "aws_batch"
+            platform: ubuntu-20.04
+          - scheduler: "kubernetes"
+            container_repo: localhost
+            platform: "linux.20_04.16x"
+          - scheduler: "local_cwd"
+            platform: ubuntu-20.04
+          - scheduler: "local_docker"
+            platform: ubuntu-20.04
+          - scheduler: "ray"
+            platform: ubuntu-20.04
       fail-fast: false
+    runs-on: ${{ matrix.platform }}
     permissions:
       id-token: write
       contents: read
@@ -66,9 +72,17 @@ jobs:
           sleep 5 # wait till the node joins so that `status` command displays the head node info
           ray status
 
+      - name: Start Kubernetes
+        if: ${{ matrix.scheduler == 'kubernetes' }}
+        run: |
+          minikube start --driver=docker --cpus=max --memory=max
+          kubectl apply -f https://raw.githubusercontent.com/volcano-sh/volcano/v1.7.0/installer/volcano-development.yaml
+          kubectl create namespace torchx-dev
+          minikube docker-env | grep "=" >> $GITHUB_ENV
+
       - name: Run Components Integration Tests
         env:
           INTEGRATION_TEST_STORAGE: ${{ secrets.INTEGRATION_TEST_STORAGE }}
-          CONTAINER_REPO: ${{ secrets.CONTAINER_REPO }}
+          CONTAINER_REPO: ${{ matrix.container_repo || secrets.CONTAINER_REPO }}
         run: |
           scripts/component_integration_tests.py --scheduler ${{ matrix.scheduler }}
