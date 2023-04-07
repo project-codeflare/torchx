@@ -171,6 +171,7 @@ def ddp(
     env: Optional[Dict[str, str]] = None,
     max_retries: int = 0,
     rdzv_port: int = 29500,
+    rdzv_backend: str = "c10d",
     mounts: Optional[List[str]] = None,
     debug: bool = False,
 ) -> specs.AppDef:
@@ -216,7 +217,7 @@ def ddp(
     # nproc_per_node: number of processes on each node
     min_nnodes, max_nnodes, nproc_per_node, nnodes_rep = parse_nnodes(j)
 
-    rdzv_backend = "c10d"
+  
     if max_nnodes == 1:
         # using port 0 makes elastic chose a free random port which is ok
         # for single-node jobs since all workers run under a single agent
@@ -231,7 +232,10 @@ def ddp(
         # rdzv_endpoint bash resolves to something to the effect of
         # ${TORCHX_RANK0_HOST:=localhost}:29500
         # use $$ in the prefix to escape the '$' literal (rather than a string Template substitution argument)
-        rdzv_endpoint = _noquote(f"$${{{macros.rank0_env}:=localhost}}:{rdzv_port}")
+        if rdzv_backend == "static":
+            rdzv_endpoint = _noquote(f"$${macros.rank0_env}:49782")
+        else:
+            rdzv_endpoint = _noquote(f"$${{{macros.rank0_env}:=localhost}}:{rdzv_port}")
 
     if env is None:
         env = {}
