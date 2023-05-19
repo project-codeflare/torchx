@@ -118,6 +118,8 @@ JOB_STATE: Dict[str, AppState] = {
     # Deleted is the AppWrapper condition where the torchX job is cancelled
     # by the user, the AppWrapper is deleted by the user, or error handling
     "Deleted": AppState.CANCELLED,
+    # Completed is the AppWrapper condition where the TorchX job is Complete or Failed
+    "Completed": AppState.SUCCEEDED,
     # Failed is the job finishes unexpectedly
     "Failed": AppState.FAILED,
 }
@@ -362,6 +364,229 @@ def role_to_pod(
         metadata=metadata,
     )
 
+def role_to_pod_v2(
+    unique_app_id: str,
+    namespace: str,
+    role: Role,
+    role_id: int,
+    service_account: Optional[str],
+    image_secret: Optional[str],
+    coscheduler_name: Optional[str],
+    priority_class_name: Optional[str],
+    network: Optional[str],
+) -> "V1Pod":
+    from kubernetes.client.models import (  # noqa: F811 redefinition of unused
+        V1Container,
+        V1ContainerPort,
+        V1EmptyDirVolumeSource,
+        V1EnvVar,
+        V1HostPathVolumeSource,
+        V1LocalObjectReference,
+        V1ObjectMeta,
+        V1PersistentVolumeClaimVolumeSource,
+        V1Pod,
+        V1PodSpec,
+        V1ResourceRequirements,
+        V1SecurityContext,
+        V1Volume,
+        V1VolumeMount,
+    )
+
+    # limits puts an upper cap on the resources a pod may consume.
+    # requests is how much the scheduler allocates. We assume that the jobs will
+    # be allocation the whole machine so requests is slightly lower than the
+    # requested resources to account for the Kubernetes node reserved resources.
+    limits = {}
+    requests = {}
+
+    resource = role.resource
+    if resource.cpu > 0:
+        mcpu = int(resource.cpu * 1000)
+        limits["cpu"] = f"{mcpu}m"
+        request_mcpu = max(mcpu - RESERVED_MILLICPU, 0)
+        requests["cpu"] = f"{request_mcpu}m"
+    if resource.memMB > 0:
+        limits["memory"] = f"{int(resource.memMB)}M"
+        request_memMB = max(int(resource.memMB) - RESERVED_MEMMB, 0)
+        requests["memory"] = f"{request_memMB}M"
+    if resource.gpu > 0:
+        requests["nvidia.com/gpu"] = limits["nvidia.com/gpu"] = str(resource.gpu)
+
+    for device_name, device_limit in resource.devices.items():
+        limits[device_name] = str(device_limit)
+
+    resources = V1ResourceRequirements(
+        limits=limits,
+        requests=requests,
+    )
+
+    node_selector: Dict[str, str] = {}
+    if LABEL_INSTANCE_TYPE in resource.capabilities:
+        node_selector[LABEL_INSTANCE_TYPE] = resource.capabilities[LABEL_INSTANCE_TYPE]
+
+    # To support PyTorch dataloaders we need to set /dev/shm to larger than the
+    # 64M default so we mount an unlimited sized tmpfs directory on it.
+    SHM_VOL = "dshm"
+    volumes = [
+        V1Volume(
+            name=SHM_VOL,
+            empty_dir=V1EmptyDirVolumeSource(
+                medium="Memory",
+            ),
+        ),
+    ]
+    volume_mounts = [
+        V1VolumeMount(name=SHM_VOL, mount_path="/dev/shm"),
+    ]
+    security_context = V1SecurityContext()
+
+    for i, mount in enumerate(role.mounts):
+        mount_name = f"mount-{i}"
+        if isinstance(mount, BindMount):
+            volumes.append(
+                V1Volume(
+                    name=mount_name,
+                    host_path=V1HostPathVolumeSource(
+                        path=mount.src_path,
+                    ),
+                )
+            )
+            volume_mounts.append(
+                V1VolumeMount(
+                    name=mount_name,
+                    mount_path=mount.dst_path,
+                    read_only=mount.read_only,
+                )
+            )
+        elif isinstance(mount, VolumeMount):
+            volumes.append(
+                V1Volume(
+                    name=mount_name,
+                    persistent_volume_claim=V1PersistentVolumeClaimVolumeSource(
+                        claim_name=mount.src,
+                    ),
+                )
+            )
+            volume_mounts.append(
+                V1VolumeMount(
+                    name=mount_name,
+                    mount_path=mount.dst_path,
+                    read_only=mount.read_only,
+                )
+            )
+        elif isinstance(mount, DeviceMount):
+            volumes.append(
+                V1Volume(
+                    name=mount_name,
+                    host_path=V1HostPathVolumeSource(
+                        path=mount.src_path,
+                    ),
+                )
+            )
+            volume_mounts.append(
+                V1VolumeMount(
+                    name=mount_name,
+                    mount_path=mount.dst_path,
+                    read_only=(
+                        "w" not in mount.permissions and "m" not in mount.permissions
+                    ),
+                )
+            )
+            security_context.privileged = True
+        else:
+            raise TypeError(f"unknown mount type {mount}")
+
+    torchx_env_var = [
+        V1EnvVar(
+            name=name,
+            value=value,
+        )
+        for name, value in role.env.items()
+    ]
+    my_env_var = [
+        V1EnvVar(
+            name=f"TORCHX_MCAD_{cleanup_str(role.name)}_0_HOSTS".upper().replace(
+                "-", ""
+            ),
+            value=f"{unique_app_id}-job0-0.{unique_app_id}",
+        )
+    ]
+
+    container_name = unique_app_id + "-c"
+    # command = [role.entrypoint]
+    # if role_id == 0:
+    #    env_name =f"TORCHX_MCAD_{cleanup_str(role.name)}_0_HOSTS".upper().replace(
+    #                "-", ""
+    #            )
+    #    arg_string = "${" + env_name + ":=localhost}"
+    #    print(f"CHECK role.args = {role.args}, type = {type(role.args)}")
+    #    print(f"CHECK role.args[1] = {role.args[1]}, type = {type(role.args[1])}")
+    #    job_index0 = role.args[1].replace(arg_string, "localhost")
+    #    print(f"CHECK job_index0= {job_index0}")
+    #    new_args = "if [ $JOB_COMPLETION_INDEX -eq 0 ] ; then echo 'rank 0' && export TORCHX_RANK0_HOST=localhost && " + job_index0 + ";" + "else echo 'worker rank' && echo $JOB_COMPLETION_INDEX && " + role.args[1] + ";\n fi;"
+
+    #    #job_args = "if \[ $JOB_COMPLETION_INDEX -eq 0 \] ;\n then echo 'rank 0' && export TORCHX_RANK0_HOST=localhost &&" + str(job_index0) + ";"\
+    #    #        + "else echo 'worker rank' && echo $JOB_COMPLETION_INDEX &&" + role.args + ";\n fi;"    
+    #    #job_args = ["if [ $JOB_COMPLETION_INDEX -eq 0 \] ;", "then echo 'rank 0' && export TORCHX_RANK0_HOST=localhost &&", job_index0, ";", "else echo 'worker rank' && echo $JOB_COMPLETION_INDEX &&", role.args, ";\n fi;"] 
+    #    #print(f"CHECK job_args = {job_args}")
+    #    role.args[1] = new_args
+    #    command += role.args
+    # else:
+    #    command += role.args  
+
+    container = V1Container(
+        command=[role.entrypoint] + role.args,
+        #command = command,
+        image=role.image,
+        #name=name,
+        name=container_name,
+        env=torchx_env_var + my_env_var,
+        resources=resources,
+        ports=[
+            V1ContainerPort(
+                name=name,
+                container_port=port,
+            )
+            for name, port in role.port_map.items()
+        ],
+        volume_mounts=volume_mounts,
+        security_context=security_context,
+    )
+
+    # Get correct formatting for image secret
+    imagesecret = V1LocalObjectReference(name=image_secret)
+    metadata = V1ObjectMeta(
+        #name=name,
+        annotations={
+            # Disable the istio sidecar as it prevents the containers from
+            # exiting once finished.
+            ANNOTATION_ISTIO_SIDECAR: "false",
+        },
+        labels={},
+        namespace=namespace,
+    )
+    if network is not None:
+        metadata.annotations.update({"k8s.v1.cni.cncf.io/networks": network})
+
+    return V1Pod(
+        api_version="v1",
+        kind="Pod",
+        spec=V1PodSpec(
+            containers=[container],
+#            hostname=name,
+            subdomain=unique_app_id,
+            image_pull_secrets=[imagesecret],
+            restart_policy="Never",
+            service_account_name=service_account,
+            volumes=volumes,
+            node_selector=node_selector,
+            scheduler_name=coscheduler_name,
+            priority_class_name=priority_class_name,
+        ),
+        metadata=metadata,
+    )
+
+
 
 def create_pod_group(
     app: AppDef, role: Role, role_idx: int, namespace: str, app_id: str
@@ -443,6 +668,52 @@ def mcad_svc(
         ),
     )
 
+#Uses Indexed Jobs - requires kubernetes release 21.0 or higher
+def pod_to_job(unique_app_id: str, namespace: str, pod: "V1Pod", service:str, job_idx: int, num_replicas:int) -> "V1Job":
+    from kubernetes.client.models import (  # noqa: F811 redefinition of unused
+        V1Job,
+        V1ObjectMeta,
+        V1PodTemplateSpec,
+        V1PodSpec,
+        V1Pod,
+        V1JobSpec,
+    )
+
+    job_name = cleanup_str(f"{unique_app_id}-job{job_idx}")
+
+    metadata = V1ObjectMeta(
+        name=job_name,
+        namespace=namespace,
+        labels = {
+            "appwrapper.mcad.ibm.com": unique_app_id,
+        }
+    )
+
+    pod_template = V1PodTemplateSpec(
+        metadata = pod.metadata,
+        spec = pod.spec,
+    )
+
+    #To Do: figure out appropriate restart policy here
+    restartPolicy = "Never",
+    pod_template.restartPolicy = "Never"
+
+    spec = V1JobSpec(
+        template = pod_template,
+        completion_mode = "Indexed", 
+        completions = num_replicas,
+        parallelism = num_replicas,
+        backoff_limit = 0,
+   )
+
+    job=V1Job(
+        api_version="batch/v1",
+        kind="Job",
+        metadata = metadata,
+        spec = spec,
+    )
+  
+    return job
 
 def cleanup_str(data: str) -> str:
     """
@@ -548,55 +819,11 @@ def app_to_resource(
             )
             genericitems.append(genericitem_pod_group)
 
-    for role_idx, role in enumerate(app.roles):
-        for replica_id in range(role.num_replicas):
-            values = macros.Values(
-                img_root="",
-                app_id=unique_app_id,
-                replica_id=str(replica_id),
-                rank0_env=f"TORCHX_MCAD_{cleanup_str(app.roles[0].name)}_0_HOSTS".upper().replace(
-                    "-", ""
-                ),
-            )
-
-            if role_idx == 0 and replica_id == 0:
-                values.rank0_env = "TORCHX_RANK0_HOST"
-            name = cleanup_str(f"{unique_app_id}-{replica_id}")
-            replica_role = values.apply(role)
-            if role_idx == 0 and replica_id == 0:
-                replica_role.env["TORCHX_RANK0_HOST"] = "localhost"
-
-            pod = role_to_pod(
-                name,
-                unique_app_id,
-                namespace,
-                replica_role,
-                service_account,
-                image_secret,
-                coscheduler_name,
-                priority_class_name,
-                network,
-            )
-            pod.metadata.labels.update(
-                pod_labels(
-                    app=app,
-                    role_idx=role_idx,
-                    role=role,
-                    replica_id=replica_id,
-                    coscheduler_name=coscheduler_name,
-                    app_id=unique_app_id,
-                )
-            )
-
-            genericitem: Dict[str, Any] = {
-                "replicas": 1,
-                "generictemplate": pod,
-            }
-            genericitems.append(genericitem)
-
+    #Testing
+    #TO DO: service generation needs to come first
     """
     Create Service:
-    The selector will have the key 'appwrapper.mcad.ibm.com', and the value will be 
+    The selector will have the key 'appwrapper.mcad.ibm.com', and the value will be
     the appwrapper name
     """
 
@@ -611,6 +838,101 @@ def app_to_resource(
         "generictemplate": svc_obj,
     }
     genericitems.append(genericitem_svc)
+
+    job_idx = 0
+
+    for role_idx, role in enumerate(app.roles):
+        num_completions = role.num_replicas 
+        #TO DO: Revised role_to_pod
+        #TO DO: replica_id = "$JOB_COMPLETION_INDEX" fails
+        #NOTE: JOB_COMPLETION_INDEX env is set to 
+        #  JOB_COMPLETION_INDEX:              (v1:metadata.annotations['batch.kubernetes.io/job-completion-index'])
+        #replica_id = "$JOB_COMPLETION_INDEX"
+        replica_id = ""
+        values = macros.Values(
+            img_root="",
+            app_id=unique_app_id,
+            replica_id=replica_id,
+            rank0_env=f"TORCHX_MCAD_{cleanup_str(app.roles[0].name)}_0_HOSTS".upper().replace(
+                "-", ""
+            ),
+        )
+        
+        replica_role = values.apply(role)
+        
+        #TO DO: rank0_env, might not be needed due to initContainers call ...
+        pod = role_to_pod_v2(
+            unique_app_id,
+            namespace,
+            replica_role,
+            role_idx,
+            service_account,
+            image_secret,
+            coscheduler_name,
+            priority_class_name,
+            network,
+        )
+        
+        pod.metadata.labels.update(
+            pod_labels(
+                app=app,
+                role_idx=role_idx,
+                role=role,
+                replica_id=replica_id,
+                coscheduler_name=coscheduler_name,
+                app_id=unique_app_id,
+            )
+        )
+        if role_idx == 0:
+            values.rank0_env = "TORCHX_RANK0_HOST"
+            replica_role_rank0 = values.apply(role)   
+            replica_role_rank0.env["TORCHX_RANK0_HOST"] = "localhost"  
+
+            pod0 = role_to_pod_v2(
+                unique_app_id,
+                namespace,
+                replica_role_rank0,
+                role_idx,
+                service_account,
+                image_secret,
+                coscheduler_name,
+                priority_class_name,
+                network,
+            )
+            
+            pod0.metadata.labels.update(
+                pod_labels(
+                    app=app,
+                    role_idx=role_idx,
+                    role=role,
+                    replica_id=replica_id,
+                    coscheduler_name=coscheduler_name,
+                    app_id=unique_app_id,
+                )
+            )
+            job_name = cleanup_str(f"{unique_app_id}-job{job_idx}")
+            job0 = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod0, service = svc_obj.metadata.name, job_idx=job_idx, num_replicas = 1)
+
+            genericitem: Dict[str, Any] = {
+                    "replicas": 1,
+                    "generictemplate": job0,
+                    "completionstatus": "Complete,Failed",
+            }
+            genericitems.append(genericitem)
+            job_idx += 1
+            num_completions -= 1
+      
+        #To do: need replica_role for role 0 pod 0
+        job_name = cleanup_str(f"{unique_app_id}-job{job_idx}")
+        job = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod, service = svc_obj.metadata.name, job_idx=job_idx, num_replicas = num_completions)
+
+        genericitem: Dict[str, Any] = {
+                "replicas": 1,
+                "generictemplate": job,
+                "completionstatus": "Complete,Failed",
+        }
+        genericitems.append(genericitem)
+
 
     job_spec: Dict[str, Any] = {
         "resources": {
