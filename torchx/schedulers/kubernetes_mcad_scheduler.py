@@ -513,32 +513,10 @@ def role_to_pod_v2(
     ]
 
     container_name = unique_app_id + "-c"
-    # command = [role.entrypoint]
-    # if role_id == 0:
-    #    env_name =f"TORCHX_MCAD_{cleanup_str(role.name)}_0_HOSTS".upper().replace(
-    #                "-", ""
-    #            )
-    #    arg_string = "${" + env_name + ":=localhost}"
-    #    print(f"CHECK role.args = {role.args}, type = {type(role.args)}")
-    #    print(f"CHECK role.args[1] = {role.args[1]}, type = {type(role.args[1])}")
-    #    job_index0 = role.args[1].replace(arg_string, "localhost")
-    #    print(f"CHECK job_index0= {job_index0}")
-    #    new_args = "if [ $JOB_COMPLETION_INDEX -eq 0 ] ; then echo 'rank 0' && export TORCHX_RANK0_HOST=localhost && " + job_index0 + ";" + "else echo 'worker rank' && echo $JOB_COMPLETION_INDEX && " + role.args[1] + ";\n fi;"
-
-    #    #job_args = "if \[ $JOB_COMPLETION_INDEX -eq 0 \] ;\n then echo 'rank 0' && export TORCHX_RANK0_HOST=localhost &&" + str(job_index0) + ";"\
-    #    #        + "else echo 'worker rank' && echo $JOB_COMPLETION_INDEX &&" + role.args + ";\n fi;"    
-    #    #job_args = ["if [ $JOB_COMPLETION_INDEX -eq 0 \] ;", "then echo 'rank 0' && export TORCHX_RANK0_HOST=localhost &&", job_index0, ";", "else echo 'worker rank' && echo $JOB_COMPLETION_INDEX &&", role.args, ";\n fi;"] 
-    #    #print(f"CHECK job_args = {job_args}")
-    #    role.args[1] = new_args
-    #    command += role.args
-    # else:
-    #    command += role.args  
 
     container = V1Container(
         command=[role.entrypoint] + role.args,
-        #command = command,
         image=role.image,
-        #name=name,
         name=container_name,
         env=torchx_env_var + my_env_var,
         resources=resources,
@@ -573,7 +551,6 @@ def role_to_pod_v2(
         kind="Pod",
         spec=V1PodSpec(
             containers=[container],
-#            hostname=name,
             subdomain=unique_app_id,
             image_pull_secrets=[imagesecret],
             restart_policy="Never",
@@ -819,8 +796,6 @@ def app_to_resource(
             )
             genericitems.append(genericitem_pod_group)
 
-    #Testing
-    #TO DO: service generation needs to come first
     """
     Create Service:
     The selector will have the key 'appwrapper.mcad.ibm.com', and the value will be
@@ -843,11 +818,6 @@ def app_to_resource(
 
     for role_idx, role in enumerate(app.roles):
         num_completions = role.num_replicas 
-        #TO DO: Revised role_to_pod
-        #TO DO: replica_id = "$JOB_COMPLETION_INDEX" fails
-        #NOTE: JOB_COMPLETION_INDEX env is set to 
-        #  JOB_COMPLETION_INDEX:              (v1:metadata.annotations['batch.kubernetes.io/job-completion-index'])
-        #replica_id = "$JOB_COMPLETION_INDEX"
         replica_id = ""
         values = macros.Values(
             img_root="",
@@ -860,7 +830,6 @@ def app_to_resource(
         
         replica_role = values.apply(role)
         
-        #TO DO: rank0_env, might not be needed due to initContainers call ...
         pod = role_to_pod_v2(
             unique_app_id,
             namespace,
