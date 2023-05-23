@@ -504,6 +504,7 @@ def role_to_pod_v2(
         )
         for name, value in role.env.items()
     ]
+    #TO DO: if job, set value to include job0, else same as v1
     my_env_var = [
         V1EnvVar(
             name=f"TORCHX_MCAD_{cleanup_str(role.name)}_0_HOSTS".upper().replace(
@@ -512,7 +513,7 @@ def role_to_pod_v2(
             value=f"{unique_app_id}-job0-0.{unique_app_id}",
         )
     ]
-
+    #TO DO: test pod version w/ container name included
     container_name = unique_app_id + "-c"
 
     container = V1Container(
@@ -754,7 +755,7 @@ def get_port_for_service(app: AppDef) -> str:
 
 
 def enable_retry(
-    job_spec: Dict[str, Any], appwrapper_retries: int, total_pods: int
+    aw_spec: Dict[str, Any], appwrapper_retries: int, total_pods: int
 ) -> None:
     requeue_dict = {
         "timeInSeconds": 300,
@@ -763,7 +764,7 @@ def enable_retry(
         "maxNumRequeuings": appwrapper_retries,
     }
     nested_specs = {"minAvailable": total_pods, "requeuing": requeue_dict}
-    job_spec["schedulingSpec"] = nested_specs
+    aw_spec["schedulingSpec"] = nested_specs
 
 
 def app_to_resource(
@@ -817,6 +818,7 @@ def app_to_resource(
 
     job_idx = 0
 
+    #TO DO refactor to support job and v1 pods 
     for role_idx, role in enumerate(app.roles):
         num_completions = role.num_replicas 
         replica_id = ""
@@ -842,7 +844,7 @@ def app_to_resource(
             priority_class_name,
             network,
         )
-        
+        #TO DO: test Job -> replica ID using $JOB_COMPLETION_INDEX pod env variable
         pod.metadata.labels.update(
             pod_labels(
                 app=app,
@@ -903,26 +905,26 @@ def app_to_resource(
         }
         genericitems.append(genericitem)
 
-
-    job_spec: Dict[str, Any] = {
+    
+    aw_spec: Dict[str, Any] = {
         "resources": {
             "GenericItems": genericitems,
         },
     }
 
     if priority is not None:
-        job_spec["priority"] = priority
+        aw_spec["priority"] = priority
 
     appwrapper_retries = min(role.max_retries for role in app.roles)
     if appwrapper_retries > 0:
         total_pods = sum(role.num_replicas for role in app.roles)
-        enable_retry(job_spec, appwrapper_retries, total_pods)
+        enable_retry(aw_spec, appwrapper_retries, total_pods)
 
     resource: Dict[str, object] = {
         "apiVersion": "mcad.ibm.com/v1beta1",
         "kind": "AppWrapper",
         "metadata": {"name": unique_app_id, "namespace": namespace},
-        "spec": job_spec,
+        "spec": aw_spec,
     }
 
     return resource
