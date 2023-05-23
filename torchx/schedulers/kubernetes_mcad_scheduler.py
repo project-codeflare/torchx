@@ -157,6 +157,7 @@ ANNOTATION_ISTIO_SIDECAR = "sidecar.istio.io/inject"
 
 LABEL_INSTANCE_TYPE = "node.kubernetes.io/instance-type"
 
+KUBERNETES_INDEXED_JOBS:bool = False
 
 def sanitize_for_serialization(obj: object) -> object:
     from kubernetes import client
@@ -1224,6 +1225,25 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         contexts, active_context = config.list_kube_config_contexts()
         return active_context
 
+    def _get_kubernetes_version(self) -> Dict[str, int]:
+        from kubernetes import client
+        from kubernetes.client.rest import ApiException
+ 
+        api_instance = client.VersionApi(self._api_client())
+       
+        try:
+            version_info = api_instance.get_code()
+            #major = version_info.major
+            #minor = version_info.minor
+            version_info = {
+                "major" : int(version_info.major),
+                "minor" : int(version_info.minor)
+            }
+            return version_info
+        except ApiException as e:
+            print(f"Exception calling Kubernetes VersionApi.getCode: {e}") 
+        #return major + "." + minor
+
     def schedule(self, dryrun_info: AppDryRunInfo[KubernetesMCADJob]) -> str:
         from kubernetes.client.rest import ApiException
 
@@ -1261,6 +1281,10 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         # map any local images to the remote image
         # images_to_push = self._update_app_images(app, cfg.get("image_repo"))
         images_to_push = self.dryrun_push_images(app, cast(Mapping[str, CfgVal], cfg))
+ 
+        version_info=self._get_kubernetes_version()
+        if(version_info["major"] >= 1 and version_info["minor"] >= 21):
+           globals()['KUBERNETES_INDEXED_JOBS'] = True
 
         service_account = cfg.get("service_account")
         assert service_account is None or isinstance(
