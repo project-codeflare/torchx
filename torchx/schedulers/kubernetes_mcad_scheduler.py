@@ -87,6 +87,9 @@ if TYPE_CHECKING:
         V1PodSpec,
         V1ResourceRequirements,
         V1Service,
+        V1Job,
+        V1JobSpec,
+        V1JobStatus,
     )
     from kubernetes.client.rest import ApiException
 
@@ -158,6 +161,11 @@ ANNOTATION_ISTIO_SIDECAR = "sidecar.istio.io/inject"
 LABEL_INSTANCE_TYPE = "node.kubernetes.io/instance-type"
 
 KUBERNETES_INDEXED_JOBS:bool = False
+
+def check_kubernetes_version(self):
+    version_info=self._get_kubernetes_version()
+    if(version_info["major"] >= 1 and version_info["minor"] >= 21):
+       globals()['KUBERNETES_INDEXED_JOBS'] = True
 
 def sanitize_for_serialization(obj: object) -> object:
     from kubernetes import client
@@ -902,6 +910,53 @@ def app_to_resource(
 
     return resource
 
+# Helper function for V1Job information -> TorchX Role
+def get_role_information_batchjob(job_resp: "V1Job", roles: Dict[str, Any]) -> Dict[str, Any]:
+    #roles = {}
+    labels = job_resp.spec.template.metadata.labels
+    role_name = labels["torchx.pytorch.org/role-name"]
+
+    CPU_KEY = "cpu"
+    GPU_KEY = "gpu"
+    MEM_KEY = "memory"
+
+    if role_name not in roles:
+        roles[role_name] = Role(name=role_name, num_replicas=0, image="")
+        roles[role_name].num_replicas += 1
+
+        roles[role_name].metadata = job_resp.spec.template.metadata
+
+        container = job_resp.spec.template.spec.containers[0] 
+        roles[role_name].image = container.image
+        roles[role_name].args = container.command
+        roles[role_name].port_map = container.ports
+        roles[role_name].env = container.env
+        roles[role_name].mounts = container.volume_mounts
+
+        #resources
+        resources = container.resources.requests
+        resource_req = Resource(cpu=-1, gpu=-1, memMB=-1)
+
+        if CPU_KEY in resources:
+            resource_req.cpu = resources[CPU_KEY]
+        # Substring matching to accomodate different gpu types
+        gpu_key_values = dict(
+            filter(
+                lambda item: GPU_KEY in item[0],
+                resources.items(),
+            )
+        )
+        if len(gpu_key_values) != 0:
+            for key, value in gpu_key_values.items():
+                resource_req.gpu = value
+        if MEM_KEY in resources:
+            resource_req.memMB = resources[MEM_KEY]
+        roles[role_name].resource = resource_req
+
+    else:
+        roles[role_name].num_replicas += job_resp.spec.parallelism
+    return roles
+
 # Helper function for MCAD generic items information -> TorchX Role
 def get_role_information(generic_items: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     # Store unique role information
@@ -934,6 +989,9 @@ def get_role_information(generic_items: Iterable[Dict[str, Any]]) -> Dict[str, A
         if GT_KEY not in generic_item.keys():
             continue
         gt_result = generic_item[GT_KEY]
+        #if KUBERNETES_INDEXED_JOBS and gt_result["kind"]=="Job":
+        #    print(f"CHECK gt_result = {gt_result}")
+        #    gt_result=gt_result["template"] 
 
         if METADATA_KEY not in gt_result.keys():
             continue
@@ -1034,6 +1092,15 @@ def get_tasks_status_description(status: Dict[str, str]) -> Dict[str, int]:
 
     return results
 
+# Does not handle not ready to dispatch or job initialization case
+def get_tasks_status_description_batchjob(status: "V1JobStatus") -> Dict[str, int]:
+    results = {}
+
+    results["running"] = int(status.active or 0)
+    results["failed"] = int(status.failed or 0)
+    results["Succeeded"] = int(status.succeeded or 0)
+
+    return results
 
 @dataclass
 class KubernetesMCADJob:
@@ -1373,7 +1440,6 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         )
         return opts
 
-    #TO DO: With Job implementation, may be able to use V1JobStatus object fields (failed, ready, succeeded etc.)
     def describe(self, app_id: str) -> Optional[DescribeAppResponse]:
         namespace, name = app_id.split(":")
         from kubernetes.client.rest import ApiException
@@ -1401,55 +1467,105 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             else:
                 raise
 
-        task_status = []
-        if "status" in api_resp.keys():
-            status = api_resp["status"]
-            tasks_results = get_tasks_status_description(status)
-            # Handle case where waiting for dispatch
-            if not tasks_results:
-                tasks_results["Pending dispatch"] = (
-                    len(api_resp["spec"]["resources"]["GenericItems"]) - 1
-                )
+        check_kubernetes_version(self)
 
-            # Convert MCAD status to TorchX replica set status format
-            # Warning: Status is not necessarily the match for a particular Replica ID
-            for key, value in tasks_results.items():
-                for id in range(0, value):
-                    task_status.append(key)
+        if KUBERNETES_INDEXED_JOBS:
+            from kubernetes.client import BatchV1Api
+            batch_api = BatchV1Api(self._client)
+            task_status = []
+            roles = {}
+            if "status" in api_resp.keys():
+                #get the state of the appwrapper
+                status = api_resp["status"]
+                status = api_resp["status"]
+                state = status["state"]
+                app_state = JOB_STATE[state]
 
-            state = status["state"]
-            app_state = JOB_STATE[state]
+                if app_state != AppState.PENDING:
+                    generic_items = api_resp["spec"]["resources"]["GenericItems"]
+                    for item in generic_items:
+                        if item["generictemplate"]["kind"] == "Job":
+                            job_name = item["generictemplate"]["metadata"]["name"]
+                            job_api_resp = batch_api.read_namespaced_job(
+                                job_name, namespace, pretty="true"
+                            )
+                            job_status : "V1JobStatus" = job_api_resp.status
+                             
+                            tasks_results = get_tasks_status_description_batchjob(job_status)
+                            for key, value in tasks_results.items():
+                                for id in range(0, value):
+                                    task_status.append(key)
+                          
+                            roles = get_role_information_batchjob(job_api_resp, roles)
+                task_count = 0
+                for role in roles:
+                    msg = "Warning - MCAD does not report individual replica statuses, but overall task status. Replica id  may not match status"
+                    warnings.warn(msg)
 
-            # Roles
-            spec = api_resp["spec"]
-            resources = spec["resources"]
-            generic_items = resources["GenericItems"]
-
-            # Note MCAD service is not considered a TorchX role
-            roles = get_role_information(generic_items)
-
-            task_count = 0
-            for role in roles:
-                msg = "Warning - MCAD does not report individual replica statuses, but overall task status. Replica id  may not match status"
-                warnings.warn(msg)
-
-                roles_statuses[role] = RoleStatus(role, [])
-                for idx in range(0, roles[role].num_replicas):
-                    state = TASK_STATE[task_status[task_count]]
-                    roles_statuses[role].replicas.append(
-                        ReplicaStatus(id=int(idx), role=role, state=state, hostname="")
-                    )
-                    task_count += 1
-
+                    roles_statuses[role] = RoleStatus(role, [])
+                    for idx in range(0, roles[role].num_replicas):
+                        state = TASK_STATE[task_status[task_count]]
+                        roles_statuses[role].replicas.append(
+                            ReplicaStatus(id=int(idx), role=role, state=state, hostname="")
+                        )
+                        task_count += 1
+            return DescribeAppResponse(
+                app_id=app_id,
+                roles=list(roles.values()),
+                roles_statuses=list(roles_statuses.values()),
+                state=app_state,
+            )
+ 
         else:
-            app_state = AppState.UNKNOWN
+            task_status = []
+            if "status" in api_resp.keys():
+                status = api_resp["status"]
+                tasks_results = get_tasks_status_description(status)
+                # Handle case where waiting for dispatch
+                if not tasks_results:
+                    tasks_results["Pending dispatch"] = (
+                        len(api_resp["spec"]["resources"]["GenericItems"]) - 1
+                    )
 
-        return DescribeAppResponse(
-            app_id=app_id,
-            roles=list(roles.values()),
-            roles_statuses=list(roles_statuses.values()),
-            state=app_state,
-        )
+                # Convert MCAD status to TorchX replica set status format
+                # Warning: Status is not necessarily the match for a particular Replica ID
+                for key, value in tasks_results.items():
+                    for id in range(0, value):
+                        task_status.append(key)
+
+                state = status["state"]
+                app_state = JOB_STATE[state]
+
+                # Roles
+                spec = api_resp["spec"]
+                resources = spec["resources"]
+                generic_items = resources["GenericItems"]
+
+                # Note MCAD service is not considered a TorchX role
+                roles = get_role_information(generic_items)
+
+                task_count = 0
+                for role in roles:
+                    msg = "Warning - MCAD does not report individual replica statuses, but overall task status. Replica id  may not match status"
+                    warnings.warn(msg)
+
+                    roles_statuses[role] = RoleStatus(role, [])
+                    for idx in range(0, roles[role].num_replicas):
+                        state = TASK_STATE[task_status[task_count]]
+                        roles_statuses[role].replicas.append(
+                            ReplicaStatus(id=int(idx), role=role, state=state, hostname="")
+                        )
+                        task_count += 1
+
+            else:
+                app_state = AppState.UNKNOWN
+
+            return DescribeAppResponse(
+                app_id=app_id,
+                roles=list(roles.values()),
+                roles_statuses=list(roles_statuses.values()),
+                state=app_state,
+            )
 #TO DO: log_iter supports pod implementation, not Jobs
 #TO DO: see if Job -> Meta -> Owner_references is helpful here
     def log_iter(
