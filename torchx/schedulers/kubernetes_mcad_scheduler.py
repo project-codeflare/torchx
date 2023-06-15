@@ -937,20 +937,21 @@ def get_role_information_batchjob(job_resp: "V1Job", roles: Dict[str, Any]) -> D
         resources = container.resources.requests
         resource_req = Resource(cpu=-1, gpu=-1, memMB=-1)
 
-        if CPU_KEY in resources:
-            resource_req.cpu = resources[CPU_KEY]
-        # Substring matching to accomodate different gpu types
-        gpu_key_values = dict(
-            filter(
-                lambda item: GPU_KEY in item[0],
-                resources.items(),
+        if resources != None:
+            if CPU_KEY in resources:
+                resource_req.cpu = resources[CPU_KEY]
+            # Substring matching to accomodate different gpu types
+            gpu_key_values = dict(
+                filter(
+                    lambda item: GPU_KEY in item[0],
+                    resources.items(),
+                )
             )
-        )
-        if len(gpu_key_values) != 0:
-            for key, value in gpu_key_values.items():
-                resource_req.gpu = value
-        if MEM_KEY in resources:
-            resource_req.memMB = resources[MEM_KEY]
+            if len(gpu_key_values) != 0:
+                for key, value in gpu_key_values.items():
+                    resource_req.gpu = value
+            if MEM_KEY in resources:
+                resource_req.memMB = resources[MEM_KEY]
         roles[role_name].resource = resource_req
 
     else:
