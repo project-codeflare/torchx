@@ -1317,6 +1317,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             return version_info
         except ApiException as e:
             print(f"Exception calling Kubernetes VersionApi.getCode: {e}") 
+            raise RuntimeError(f"Kubernetes version error: {e}")
 
     def schedule(self, dryrun_info: AppDryRunInfo[KubernetesMCADJob]) -> str:
         from kubernetes.client.rest import ApiException
