@@ -1113,10 +1113,8 @@ def get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
     else: 
         core_api = client.CoreV1Api(self._api_client())
         label_set = "appwrapper.mcad.ibm.com={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
-        #pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector="appwrapper.mcad.ibm.com={}".format(name))
         pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
         role_index: int
-        #Consider filtering by role here and just building a smaller list of pods (python list, not PodList)
         for pod in pod_list.items:
             if pod.metadata.labels['torchx.pytorch.org/role-name'] != role_name:
                 continue
@@ -1134,15 +1132,6 @@ def get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
             for pod in pod_list.items:
                if job in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == completion_index:
                    return pod.metadata.name 
-
-           # if k == 0:
-           #    for pod in pod_list.items: 
-           #        #job0 in label->resourceName
-           #        #TO DO test the k=0 logic
-           #        if "job0" in pod.metadata.labels['resourceName'] return pod.metadata.name
-           # else:
-           #    for pod in pod_list.items:
-           #        if "job1" in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k-1) return pod.metadata.name
         else:
             for pod in pod_list.items:
                 if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k):
