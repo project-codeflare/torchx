@@ -1103,6 +1103,52 @@ def get_tasks_status_description_batchjob(status: "V1JobStatus") -> Dict[str, in
 
     return results
 
+def get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
+    from kubernetes import client    
+    namespace, name = app_id.split(":")
+    check_kubernetes_version(self)
+    if not KUBERNETES_INDEXED_JOBS:
+        pod_name = cleanup_str(f"{name}-{k}")
+        return pod_name
+    else: 
+        core_api = client.CoreV1Api(self._api_client())
+        label_set = "appwrapper.mcad.ibm.com={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
+        #pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector="appwrapper.mcad.ibm.com={}".format(name))
+        pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
+        role_index: int
+        #Consider filtering by role here and just building a smaller list of pods (python list, not PodList)
+        for pod in pod_list.items:
+            if pod.metadata.labels['torchx.pytorch.org/role-name'] != role_name:
+                continue
+
+            role_index = int(pod.metadata.labels['torchx.pytorch.org/role-index']) 
+        if role_index == 0:
+            job: str
+            completion_index: str
+            if k == 0:
+               job = "job0"
+               completion_index = str(k)
+            else:
+               job = "job1"
+               completion_index = str(k-1)
+            for pod in pod_list.items:
+               if job in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == completion_index:
+                   return pod.metadata.name 
+
+           # if k == 0:
+           #    for pod in pod_list.items: 
+           #        #job0 in label->resourceName
+           #        #TO DO test the k=0 logic
+           #        if "job0" in pod.metadata.labels['resourceName'] return pod.metadata.name
+           # else:
+           #    for pod in pod_list.items:
+           #        if "job1" in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k-1) return pod.metadata.name
+        else:
+            for pod in pod_list.items:
+                if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k):
+                    return pod.metadata.name 
+
+
 @dataclass
 class KubernetesMCADJob:
     images_to_push: Dict[str, Tuple[str, str]]
@@ -1569,6 +1615,8 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             )
 #TO DO: log_iter supports pod implementation, not Jobs
 #TO DO: see if Job -> Meta -> Owner_references is helpful here
+#TO DO: consider building JobList using role_name, then use pod labels: job-name to get a list of pods associated with each job 
+#TO DO: alternative, use role_name and appwrapper_name labels to build pod list
     def log_iter(
         self,
         app_id: str,
@@ -1590,8 +1638,11 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         from kubernetes import client, watch
 
         namespace, name = app_id.split(":")
-        
-        pod_name = cleanup_str(f"{name}-{k}")
+        #TESTING:
+        pod_name = get_pod_name_for_logiter(self, app_id=app_id, role_name=role_name, k=k) 
+        #print(f"CHECK returned pod name = {pod_name}")
+        #
+        #pod_name = cleanup_str(f"{name}-{k}")
 
         args: Dict[str, object] = {
             "name": pod_name,
@@ -1602,6 +1653,13 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             args["since_seconds"] = (datetime.now() - since).total_seconds()
 
         core_api = client.CoreV1Api(self._api_client())
+
+        #TO DO: apply role_name too, need to backout the replic ID based on role_id and k 
+        #pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector="appwrapper.mcad.ibm.com={}".format(name))
+        #pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=["appwrapper.mcad.ibm.com={}".format(name), "torchx.pytorch.org/role-name={}".format(role_name)])
+        #print(f"CHECK, pod list = {pod_list}")
+        #exit(0)
+
         if should_tail:
             w = watch.Watch()
             iterator = w.stream(core_api.read_namespaced_pod_log, **args)
