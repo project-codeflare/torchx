@@ -1602,10 +1602,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                 roles_statuses=list(roles_statuses.values()),
                 state=app_state,
             )
-#TO DO: log_iter supports pod implementation, not Jobs
-#TO DO: see if Job -> Meta -> Owner_references is helpful here
-#TO DO: consider building JobList using role_name, then use pod labels: job-name to get a list of pods associated with each job 
-#TO DO: alternative, use role_name and appwrapper_name labels to build pod list
+
     def log_iter(
         self,
         app_id: str,
@@ -1627,11 +1624,8 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         from kubernetes import client, watch
 
         namespace, name = app_id.split(":")
-        #TESTING:
+
         pod_name = get_pod_name_for_logiter(self, app_id=app_id, role_name=role_name, k=k) 
-        #print(f"CHECK returned pod name = {pod_name}")
-        #
-        #pod_name = cleanup_str(f"{name}-{k}")
 
         args: Dict[str, object] = {
             "name": pod_name,
@@ -1642,12 +1636,6 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             args["since_seconds"] = (datetime.now() - since).total_seconds()
 
         core_api = client.CoreV1Api(self._api_client())
-
-        #TO DO: apply role_name too, need to backout the replic ID based on role_id and k 
-        #pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector="appwrapper.mcad.ibm.com={}".format(name))
-        #pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=["appwrapper.mcad.ibm.com={}".format(name), "torchx.pytorch.org/role-name={}".format(role_name)])
-        #print(f"CHECK, pod list = {pod_list}")
-        #exit(0)
 
         if should_tail:
             w = watch.Watch()
