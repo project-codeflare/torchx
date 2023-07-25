@@ -1546,6 +1546,9 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                             ReplicaStatus(id=int(idx), role=role, state=state, hostname="")
                         )
                         task_count += 1
+            else:
+               app_state = AppState.UNKNOWN
+
             return DescribeAppResponse(
                 app_id=app_id,
                 roles=list(roles.values()),
