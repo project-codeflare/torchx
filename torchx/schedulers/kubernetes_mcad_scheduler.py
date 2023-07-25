@@ -761,7 +761,6 @@ def create_job_objects(
                     app_id=unique_app_id,
                 )
             )
-            #job_name = cleanup_str(f"{unique_app_id}-job{job_idx}")
             job0 = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod0, service = mcad_svc_name, job_idx=job_idx, num_replicas = 1)
 
             genericitem: Dict[str, Any] = {
@@ -774,7 +773,8 @@ def create_job_objects(
             num_completions -= 1
       
         #To do: need replica_role for role 0 pod 0
-        #job_name = cleanup_str(f"{unique_app_id}-job{job_idx}")
+        if num_completions == 0:
+            continue
         job = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod, service = mcad_svc_name, job_idx=job_idx, num_replicas = num_completions)
 
         genericitem: Dict[str, Any] = {
