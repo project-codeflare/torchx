@@ -219,7 +219,7 @@ class MountType(str, Enum):
     BIND = "bind"
     VOLUME = "volume"
     DEVICE = "device"
-
+    EPHEMERAL = "ephemeral"
 
 @dataclass
 class BindMount:
@@ -268,6 +268,21 @@ class DeviceMount:
     dst_path: str
     permissions: str = "rwm"
 
+@dataclass
+class EphemeralMount:
+    """
+    Defines a temporary storage to mount into the container.
+    Args:
+        dst_path: the path in the worker environment/container
+        mem_size: the size of the temporary memory in bytes
+        class: the storage class name
+        access_mode: the access mode to set on the storage. Default: ReadWriteOnce
+    """
+
+    dst_path: str
+    mem_size: str
+    class: str
+    access_mode: str = "ReadWriteOnce"
 
 @dataclass
 class Role:

@@ -184,6 +184,7 @@ def parse_mounts(opts: List[str]) -> List[Union[BindMount, VolumeMount, DeviceMo
         BindMount: type=bind,src=<host path>,dst=<container path>[,readonly]
         VolumeMount: type=volume,src=<name/id>,dst=<container path>[,readonly]
         DeviceMount: type=device,src=/dev/<dev>[,dst=<container path>][,perm=rwm]
+        EphemeralMount: type=ephemeral,dst=<container path>,mem_size=<size in bytes>,class=<storage class name>[,readWriteOnce]
     """
     mount_opts = []
     cur = {}
@@ -228,6 +229,12 @@ def parse_mounts(opts: List[str]) -> List[Union[BindMount, VolumeMount, DeviceMo
                         f"{c} is not a valid permission flags must one of r,w,m"
                     )
             mounts.append(DeviceMount(src_path=src, dst_path=dst, permissions=perm))
+        elif typ == MountType.EPHEMERAL:
+            mounts.append(
+                EphemeralMount(
+                    dst_path=opts["dst"], mem_size=opts["mem_size"], class=opts["class"],access_mode=access_mode in opts
+                )
+            )
         else:
             valid = list(str(item.value) for item in MountType)
             raise ValueError(f"invalid mount type {repr(typ)}, must be one of {valid}")
