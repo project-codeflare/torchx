@@ -71,6 +71,7 @@ from torchx.specs.api import (
     RoleStatus,
     runopts,
     VolumeMount,
+    EphemeralMount,
 )
 
 from torchx.workspace.docker_workspace import DockerWorkspaceMixin
@@ -189,6 +190,9 @@ def role_to_pod(
         V1SecurityContext,
         V1Volume,
         V1VolumeMount,
+        V1EphemeralVolumeSource,
+        V1PersistentVolumeClaimTemplate,
+        V1PersistentVolumeClaimSpec,
     )
 
     # limits puts an upper cap on the resources a pod may consume.
@@ -292,6 +296,25 @@ def role_to_pod(
                 )
             )
             security_context.privileged = True
+        elif isinstance(mount, EphemeralMount):
+            volumes.append(
+               V1Volume(
+                   name=mount_name,
+                   ephemeral=V1EphemeralVolumeSource(
+                       volume_claim_template=V1PersistentVolumeClaimTemplate(
+                           spec=V1PersistentVolumeClaimSpec(
+                              access_modes=[mount.perm], resources=V1ResourceRequirements(requests={"storage": mount.mem_size}), storage_class_name=mount.storage_class, volume_mode="Filesystem"
+                           )
+                       ),
+                   ),
+               )
+            )
+            volume_mounts.append(
+               V1VolumeMount(
+                  name=mount_name,
+                  mount_path=mount.dst_path,
+               )
+            )
         else:
             raise TypeError(f"unknown mount type {mount}")
 
