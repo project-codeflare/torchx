@@ -204,6 +204,7 @@ def ddp(
         rdzv_port: the port on rank0's host to use for hosting the c10d store used for rendezvous.
                    Only takes effect when running multi-node. When running single node, this parameter
                    is ignored and a random free port is chosen.
+        rdzv_backend: the rendezvous backend to use. Only takes effect when running multi-node.
         mounts: mounts to mount into the worker environment/container (ex. type=<bind/volume>,src=/host,dst=/job[,readonly]).
                 See scheduler documentation for more info.
         debug: whether to run with preset debug flags enabled
@@ -217,13 +218,12 @@ def ddp(
     # nproc_per_node: number of processes on each node
     min_nnodes, max_nnodes, nproc_per_node, nnodes_rep = parse_nnodes(j)
 
-  
     if max_nnodes == 1:
         # using port 0 makes elastic chose a free random port which is ok
         # for single-node jobs since all workers run under a single agent
         # When nnodes is 0 and max_nnodes is 1, it's stil a single node job
         # but pending until the resources become available
-        rdzv_endpoint = _noquote(f"$${macros.rank0_env}:49782")
+        rdzv_endpoint = "localhost:0"
     else:
         # for multi-node, rely on the rank0_env environment variable set by
         # the schedulers (see scheduler implementation for the actual env var this maps to)
@@ -233,9 +233,7 @@ def ddp(
         # ${TORCHX_RANK0_HOST:=localhost}:29500
         # use $$ in the prefix to escape the '$' literal (rather than a string Template substitution argument)
         if rdzv_backend == "static":
-            rdzv_endpoint = _noquote(f"$${macros.rank0_env}:49782")
-        else:
-            rdzv_endpoint = _noquote(f"$${{{macros.rank0_env}:=localhost}}:{rdzv_port}")
+            _noquote(f"$${{{macros.rank0_env}:=localhost}}:{rdzv_port}")
 
     if env is None:
         env = {}
@@ -264,8 +262,6 @@ def ddp(
         nnodes_rep,
         "--nproc_per_node",
         str(nproc_per_node),
-        "--node_rank", 
-        macros.replica_id,
         "--tee",
         "3",
         "--role",
