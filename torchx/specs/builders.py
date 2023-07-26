@@ -8,7 +8,7 @@ import argparse
 import inspect
 from typing import Any, Callable, Dict, List, Mapping, Optional, Union
 
-from torchx.specs.api import BindMount, MountType, VolumeMount
+from torchx.specs.api import BindMount, MountType, VolumeMount, EphemeralMount
 from torchx.specs.file_linter import get_fn_docstring, TorchXArgumentHelpFormatter
 from torchx.util.types import (
     decode_from_string,
@@ -166,10 +166,12 @@ _MOUNT_OPT_MAP: Mapping[str, str] = {
     "source": "src",
     "src": "src",
     "perm": "perm",
+    "mem_size": "mem_size",
+    "storage_class": "storage_class",
 }
 
 
-def parse_mounts(opts: List[str]) -> List[Union[BindMount, VolumeMount, DeviceMount]]:
+def parse_mounts(opts: List[str]) -> List[Union[BindMount, VolumeMount, DeviceMount, EphemeralMount]]:
     """
     parse_mounts parses a list of options into typed mounts following a similar
     format to Dockers bind mount.
@@ -184,7 +186,7 @@ def parse_mounts(opts: List[str]) -> List[Union[BindMount, VolumeMount, DeviceMo
         BindMount: type=bind,src=<host path>,dst=<container path>[,readonly]
         VolumeMount: type=volume,src=<name/id>,dst=<container path>[,readonly]
         DeviceMount: type=device,src=/dev/<dev>[,dst=<container path>][,perm=rwm]
-        EphemeralMount: type=ephemeral,dst=<container path>,mem_size=<size in bytes>,class=<storage class name>[,readWriteOnce]
+        EphemeralMount: type=ephemeral,dst=<container path>,mem_size=<size in bytes>,storage_class=<storage class name>[,readWriteOnce]
     """
     mount_opts = []
     cur = {}
@@ -230,9 +232,10 @@ def parse_mounts(opts: List[str]) -> List[Union[BindMount, VolumeMount, DeviceMo
                     )
             mounts.append(DeviceMount(src_path=src, dst_path=dst, permissions=perm))
         elif typ == MountType.EPHEMERAL:
+            perm = opts.get("perm", "ReadWriteOnce")
             mounts.append(
                 EphemeralMount(
-                    dst_path=opts["dst"], mem_size=opts["mem_size"], class=opts["class"],access_mode=access_mode in opts
+                    dst_path=opts["dst"], mem_size=opts["mem_size"], storage_class=opts["storage_class"],perm=perm
                 )
             )
         else:
