@@ -16,6 +16,7 @@ from torchx.specs.builders import (
     _create_args_parser,
     BindMount,
     DeviceMount,
+    EphemeralMount,
     make_app_handle,
     materialize_appdef,
     parse_mounts,
@@ -467,6 +468,11 @@ class MountsTest(unittest.TestCase):
                     "src=foo",
                     "dst=bar",
                     "perm=rw",
+                    "type=ephemeral",
+                    "dst=dst3",
+                    "mem_size=1024",
+                    "storage_class=example-class",
+                    "perm=ReadWriteOnce",
                 ]
             ),
             [
@@ -475,6 +481,7 @@ class MountsTest(unittest.TestCase):
                 VolumeMount(src="foo2", dst_path="dst2", read_only=True),
                 DeviceMount(src_path="duck", dst_path="duck", permissions="rwm"),
                 DeviceMount(src_path="foo", dst_path="bar", permissions="rw"),
+                EphemeralMount(dst_path="dst3", mem_size="1024", storage_class="example-class", perm="ReadWriteOnce"),
             ],
         )
 
