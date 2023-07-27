@@ -29,6 +29,7 @@ from .api import (  # noqa: F401 F403
     BindMount,
     CfgVal,
     DeviceMount,
+    EphemeralMount,
     get_type_name,
     InvalidRunConfigException,
     is_terminal,
