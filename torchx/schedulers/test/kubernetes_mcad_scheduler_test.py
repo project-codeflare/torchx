@@ -1375,6 +1375,76 @@ spec:
         )
         self.assertTrue(pod.spec.containers[0].security_context.privileged)
 
+
+    def test_ephemeral_mounts(self) -> None:
+        scheduler = create_scheduler("test")
+        from kubernetes.client.models import (
+            V1EphemeralVolumeSource,
+            V1PersistentVolumeClaimTemplate,
+            V1PersistentVolumeClaimSpec,
+            V1ResourceRequirements,
+            V1Volume,
+            V1VolumeMount,
+        )
+
+        role = specs.Role(
+            name="foo",
+            image="",
+            mounts=[
+                specs.EphemeralMount(dst_path="/scratch1", mem_size="1024", storage_class="ex-storage-class-1", perm="ReadWriteOnce"),
+                specs.EphemeralMount(dst_path="/scratch2", mem_size="2048", storage_class="ex-storage-class-2", perm="ReadOnlyMany"),
+            ],
+        )
+        pod = role_to_pod(
+            "foo",
+            "foo-unique",
+            "testnamespace",
+            role,
+            service_account="",
+            image_secret="",
+            coscheduler_name="",
+            priority_class_name="",
+            network="",
+        )
+        self.assertEqual(
+            pod.spec.volumes[1:],
+            [
+                V1Volume(
+                    name="mount-0",
+                    ephemeral=V1EphemeralVolumeSource(
+                        volume_claim_template=V1PersistentVolumeClaimTemplate(
+                            spec=V1PersistentVolumeClaimSpec(
+                               access_modes=["ReadWriteOnce"], resources=V1ResourceRequirements(requests={"storage": "1024"}), storage_class_name="ex-storage-class-1", volume_mode="Filesystem",
+                            ),
+                        ),
+                    ),
+                ),
+                V1Volume(
+                    name="mount-1",
+                    ephemeral=V1EphemeralVolumeSource(
+                        volume_claim_template=V1PersistentVolumeClaimTemplate(
+                            spec=V1PersistentVolumeClaimSpec(
+                               access_modes=["ReadOnlyMany"], resources=V1ResourceRequirements(requests={"storage": "2048"}), storage_class_name="ex-storage-class-2", volume_mode="Filesystem"
+                            ),
+                        ),
+                    ),
+                ),
+            ],
+        )
+        self.assertEqual(
+            pod.spec.containers[0].volume_mounts[1:],
+            [
+                V1VolumeMount(
+                    name="mount-0",
+                    mount_path="/scratch1",
+                ),
+                V1VolumeMount(
+                    name="mount-1",
+                    mount_path="/scratch2",
+                ),
+            ],
+        )
+
     def test_resource_devices(self) -> None:
         scheduler = create_scheduler("test")
 
