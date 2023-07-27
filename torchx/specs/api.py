@@ -351,7 +351,7 @@ class Role:
     resource: Resource = NULL_RESOURCE
     port_map: Dict[str, int] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    mounts: List[Union[BindMount, VolumeMount, DeviceMount]] = field(
+    mounts: List[Union[BindMount, VolumeMount, DeviceMount, EphemeralMount]] = field(
         default_factory=list
     )
 
