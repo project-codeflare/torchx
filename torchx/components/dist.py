@@ -232,8 +232,7 @@ def ddp(
         # rdzv_endpoint bash resolves to something to the effect of
         # ${TORCHX_RANK0_HOST:=localhost}:29500
         # use $$ in the prefix to escape the '$' literal (rather than a string Template substitution argument)
-        if rdzv_backend == "static":
-            _noquote(f"$${{{macros.rank0_env}:=localhost}}:{rdzv_port}")
+        rdzv_endpoint = _noquote(f"$${{{macros.rank0_env}:=localhost}}:{rdzv_port}")
 
     if env is None:
         env = {}
