@@ -627,7 +627,7 @@ def app_to_resource(
         enable_retry(job_spec, appwrapper_retries, total_pods)
 
     resource: Dict[str, object] = {
-        "apiVersion": "mcad.ibm.com/v1beta1",
+        "apiVersion": "workload.codeflare.dev/v1beta1",
         "kind": "AppWrapper",
         "metadata": {"name": unique_app_id, "namespace": namespace},
         "spec": job_spec,
@@ -947,7 +947,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         try:
             resp = self._custom_objects_api().create_namespaced_custom_object(
-                group="mcad.ibm.com",
+                group="workload.codeflare.dev",
                 version="v1beta1",
                 namespace=namespace,
                 plural="appwrappers",
@@ -1035,7 +1035,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
     def _cancel_existing(self, app_id: str) -> None:
         namespace, name = app_id.split(":")
         self._custom_objects_api().delete_namespaced_custom_object(
-            group="mcad.ibm.com",
+            group="workload.codeflare.dev",
             version="v1beta1",
             namespace=namespace,
             plural="appwrappers",
@@ -1096,7 +1096,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         # Production section
         api_instance = self._custom_objects_api
-        group = "mcad.ibm.com"
+        group = "workload.codeflare.dev"
         version = "v1beta1"
         plural = "appwrappers"
         try:
@@ -1214,7 +1214,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         namespace = active_context["context"]["namespace"]
 
         resp = self._custom_objects_api().list_namespaced_custom_object(
-            group="mcad.ibm.com",
+            group="workload.codeflare.dev",
             version="v1beta1",
             namespace=namespace,
             plural="appwrappers",
