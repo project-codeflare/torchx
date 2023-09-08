@@ -100,7 +100,7 @@ class CommandActor:  # pragma: no cover
 
     def get_actor_address_and_port(self) -> Tuple[str, int]:
         # addr = ray.util.get_node_ip_address()
-        addr = os.getenv("MY_POD_IP")
+        addr = os.getenv("MY_POD_IP", "localhost")
         with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
             s.bind(("", 0))
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -223,7 +223,7 @@ class RayDriver:
             replica=replica,
         )
 
-        if self.master_node_id == None:
+        if self.master_node_id is None:
             self.master_node_id = actor_id
             self.rank_0_address, self.rank_0_port = ray.get(
                 actor.get_actor_address_and_port.remote()
@@ -258,7 +258,7 @@ class RayDriver:
                 if not self.terminating:
                     actor = self.actor_info_of_id[result.id].actor
                     self.active_tasks.append(
-                        actor.exec_module.remote(
+                        actor.exec_module.remote(  # pyre-ignore[16]
                             self.rank_0_address, self.rank_0_port, result.id
                         )
                     )
