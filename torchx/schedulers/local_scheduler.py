@@ -99,7 +99,7 @@ class ReplicaParam:
 
 class ImageProvider(abc.ABC):
     """
-    Manages downloading and setting up an on localhost. This is only needed for
+    Manages downloading and setting up an image on localhost. This is only needed for
     ``LocalhostScheduler`` since typically real schedulers will do this
     on-behalf of the user.
     """
@@ -556,6 +556,7 @@ class LocalScheduler(Scheduler[LocalOpts]):
         cache_size: int = 100,
         extra_paths: Optional[List[str]] = None,
     ) -> None:
+        # NOTE: make sure any new init options are supported in create_scheduler(...)
         super().__init__("local", session_name)
 
         # TODO T72035686 replace dict with a proper LRUCache data structure
@@ -766,7 +767,7 @@ class LocalScheduler(Scheduler[LocalOpts]):
     def _cuda_device_count(self) -> int:
         # this method deliberately does not use ``torch.cuda.device_count()``
         # to avoid taking a dependency on pytorch
-        # this make sit possible to avoid a BUCK dependency (internally at Meta)
+        # this makes it possible to avoid a BUCK dependency (internally at Meta)
         # on //caffe2:torch which slows down builds of //torchx:* rules
         gpu_cmd = "nvidia-smi -L"
         try:
@@ -832,7 +833,7 @@ class LocalScheduler(Scheduler[LocalOpts]):
                     """\n
 ======================================================================
 Running multiple role replicas that require GPUs without
-setting `CUDA_VISIBLE_DEVICES` may result in multiple 
+setting `CUDA_VISIBLE_DEVICES` may result in multiple
 processes using the same GPU device with undesired consequences
 such as CUDA OutOfMemory errors.
 
@@ -1124,9 +1125,15 @@ class LogIterator:
                 return line
 
 
-def create_scheduler(session_name: str, **kwargs: Any) -> LocalScheduler:
+def create_scheduler(
+    session_name: str,
+    cache_size: int = 100,
+    extra_paths: Optional[List[str]] = None,
+    **kwargs: Any,
+) -> LocalScheduler:
     return LocalScheduler(
         session_name=session_name,
-        cache_size=kwargs.get("cache_size", 100),
         image_provider_class=CWDImageProvider,
+        cache_size=cache_size,
+        extra_paths=extra_paths,
     )

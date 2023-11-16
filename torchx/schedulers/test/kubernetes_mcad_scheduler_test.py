@@ -159,10 +159,14 @@ def _test_app(num_replicas: int = 1) -> specs.AppDef:
 
 class KubernetesMCADSchedulerTest(unittest.TestCase):
     def test_create_scheduler(self) -> None:
-        scheduler = create_scheduler("foo")
+        client = MagicMock()
+        docker_client = MagicMock()
+        scheduler = create_scheduler("foo", client=client, docker_client=docker_client)
         self.assertIsInstance(
             scheduler, kubernetes_mcad_scheduler.KubernetesMCADScheduler
         )
+        self.assertEquals(client, scheduler._client)
+        self.assertEquals(docker_client, scheduler._docker_client)
 
     def test_app_to_resource_resolved_macros(self) -> None:
         app = _test_app()
@@ -381,7 +385,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
                     "app.kubernetes.io/name": "test",
                     "app.kubernetes.io/managed-by": "torchx.pytorch.org",
                     "app.kubernetes.io/instance": "app-name",
-                    "appwrapper.mcad.ibm.com": unique_app_name,
+                    "appwrapper.workload.codeflare.dev": unique_app_name,
                 },
             },
             "spec": {
@@ -446,7 +450,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
                         target_port=int(service_port),
                     )
                 ],
-                selector={"appwrapper.mcad.ibm.com": service_name},
+                selector={"appwrapper.workload.codeflare.dev": service_name},
                 session_affinity="None",
                 type="ClusterIP",
             ),
@@ -550,7 +554,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
 
         self.assertEqual(
             resource,
-            f"""apiVersion: mcad.ibm.com/v1beta1
+            f"""apiVersion: workload.codeflare.dev/v1beta1
 kind: AppWrapper
 metadata:
   name: app-name
@@ -567,7 +571,7 @@ spec:
             app.kubernetes.io/instance: app-name
             app.kubernetes.io/managed-by: torchx.pytorch.org
             app.kubernetes.io/name: test
-            appwrapper.mcad.ibm.com: app-name
+            appwrapper.workload.codeflare.dev: app-name
           name: app-name-pg0
           namespace: test_namespace
         spec:
@@ -663,7 +667,7 @@ spec:
             targetPort: 1234
           publishNotReadyAddresses: true
           selector:
-            appwrapper.mcad.ibm.com: app-name
+            appwrapper.workload.codeflare.dev: app-name
           sessionAffinity: None
           type: ClusterIP
         status:
@@ -1607,7 +1611,7 @@ spec:
         self.assertEqual(id, "testnamespace:testid")
         call = create_namespaced_custom_object.call_args
         args, kwargs = call
-        self.assertEqual(kwargs["group"], "mcad.ibm.com")
+        self.assertEqual(kwargs["group"], "workload.codeflare.dev")
         self.assertEqual(kwargs["version"], "v1beta1")
         self.assertEqual(kwargs["namespace"], "testnamespace")
         self.assertEqual(kwargs["plural"], "appwrappers")
@@ -1665,7 +1669,7 @@ spec:
         call = get_namespaced_custom_object.call_args
         args, kwargs = call
 
-        assert "mcad.ibm.com" in args
+        assert "workload.codeflare.dev" in args
         assert "v1beta1" in args
         assert "appwrappers" in args
         assert "foo" in args
@@ -1767,7 +1771,7 @@ spec:
         call = get_namespaced_custom_object.call_args
         args, kwargs = call
 
-        assert "mcad.ibm.com" in args
+        assert "workload.codeflare.dev" in args
         assert "v1beta1" in args
         assert "appwrappers" in args
         assert "foo" in args
@@ -1844,7 +1848,7 @@ spec:
         self.assertEqual(
             kwargs,
             {
-                "group": "mcad.ibm.com",
+                "group": "workload.codeflare.dev",
                 "version": "v1beta1",
                 "namespace": "testnamespace",
                 "plural": "appwrappers",
@@ -1866,7 +1870,7 @@ spec:
             self.assertEqual(
                 kwargs,
                 {
-                    "group": "mcad.ibm.com",
+                    "group": "workload.codeflare.dev",
                     "version": "v1beta1",
                     "namespace": "default",
                     "plural": "appwrappers",
@@ -1877,12 +1881,12 @@ spec:
     @patch("kubernetes.client.CustomObjectsApi.list_namespaced_custom_object")
     def test_list_values(self, list_namespaced_custom_object: MagicMock) -> None:
         list_namespaced_custom_object.return_value = {
-            "apiVersion": "mcad.ibm.com/v1beta1",
+            "apiVersion": "workload.codeflare.dev/v1beta1",
             "name": "test-training",
             "namespace": "default",
             "items": [
                 {
-                    "apiVersion": "mcad.ibm.com/v1beta1",
+                    "apiVersion": "workload.codeflare.dev/v1beta1",
                     "kind": "AppWrapper",
                     "metadata": {
                         "name": "test-training",
@@ -1935,7 +1939,7 @@ spec:
                     },
                 },
                 {
-                    "apiVersion": "mcad.ibm.com/v1beta1",
+                    "apiVersion": "workload.codeflare.dev/v1beta1",
                     "kind": "AppWrapper",
                     "metadata": {
                         "name": "test-training",

@@ -28,7 +28,9 @@ from torchx.schedulers.aws_batch_scheduler import (
 from torchx.specs import AppState, Resource
 
 
-def _test_app() -> specs.AppDef:
+def _test_app(
+    num_replicas: int = 2, resource: Optional[Resource] = None
+) -> specs.AppDef:
     trainer_role = specs.Role(
         name="trainer",
         image="pytorch/torchx:latest",
@@ -41,20 +43,21 @@ def _test_app() -> specs.AppDef:
             f" --rank0_host $${{{specs.macros.rank0_env}:=localhost}}",
         ],
         env={"FOO": "bar"},
-        resource=specs.Resource(
+        resource=resource
+        or specs.Resource(
             cpu=2,
             memMB=3000,
             gpu=4,
         ),
         port_map={"foo": 1234},
-        num_replicas=2,
+        num_replicas=num_replicas,
         max_retries=3,
         mounts=[
             specs.BindMount(src_path="/src", dst_path="/dst", read_only=True),
         ],
     )
 
-    return specs.AppDef("test", roles=[trainer_role])
+    return specs.AppDef("test", roles=[trainer_role], metadata={"FIZZ": "buzz"})
 
 
 @contextmanager
@@ -95,8 +98,16 @@ class MockPaginator:
 
 class AWSBatchSchedulerTest(unittest.TestCase):
     def test_create_scheduler(self) -> None:
-        scheduler = create_scheduler("foo")
+        client = MagicMock()
+        log_client = MagicMock()
+        docker_client = MagicMock()
+        scheduler = create_scheduler(
+            "foo", client=client, log_client=log_client, docker_client=docker_client
+        )
         self.assertIsInstance(scheduler, AWSBatchScheduler)
+        self.assertEqual(scheduler._client, client)
+        self.assertEqual(scheduler._log_client, log_client)
+        self.assertEqual(scheduler._docker_client, docker_client)
 
     def test_submit_dryrun_with_share_id(self) -> None:
         app = _test_app()
@@ -136,6 +147,7 @@ class AWSBatchSchedulerTest(unittest.TestCase):
                 "torchx.pytorch.org/version": torchx.__version__,
                 "torchx.pytorch.org/app-name": "test",
                 "torchx.pytorch.org/user": "testuser",
+                "FIZZ": "buzz",
             },
             info.request.job_def["tags"],
         )
@@ -146,6 +158,36 @@ class AWSBatchSchedulerTest(unittest.TestCase):
         node_groups = info.request.job_def["nodeProperties"]["nodeRangeProperties"]
         self.assertEqual(1, len(node_groups))
         self.assertTrue(node_groups[0]["container"]["privileged"])
+
+    def test_submit_dryrun_instance_type_multinode(self) -> None:
+        cfg = AWSBatchOpts({"queue": "ignored_in_test", "privileged": True})
+        resource = specs.named_resources_aws.aws_p3dn_24xlarge()
+        app = _test_app(num_replicas=2, resource=resource)
+        info = create_scheduler("test").submit_dryrun(app, cfg)
+        node_groups = info.request.job_def["nodeProperties"]["nodeRangeProperties"]
+        self.assertEqual(1, len(node_groups))
+        self.assertEqual(
+            resource.capabilities[specs.named_resources_aws.K8S_ITYPE],
+            node_groups[0]["container"]["instanceType"],
+        )
+
+    def test_submit_dryrun_no_instance_type_singlenode(self) -> None:
+        cfg = AWSBatchOpts({"queue": "ignored_in_test", "privileged": True})
+        resource = specs.named_resources_aws.aws_p3dn_24xlarge()
+        app = _test_app(num_replicas=1, resource=resource)
+        info = create_scheduler("test").submit_dryrun(app, cfg)
+        node_groups = info.request.job_def["nodeProperties"]["nodeRangeProperties"]
+        self.assertEqual(1, len(node_groups))
+        self.assertTrue("instanceType" not in node_groups[0]["container"])
+
+    def test_submit_dryrun_no_instance_type_non_aws(self) -> None:
+        cfg = AWSBatchOpts({"queue": "ignored_in_test", "privileged": True})
+        resource = specs.named_resources_aws.aws_p3dn_24xlarge()
+        app = _test_app(num_replicas=2)
+        info = create_scheduler("test").submit_dryrun(app, cfg)
+        node_groups = info.request.job_def["nodeProperties"]["nodeRangeProperties"]
+        self.assertEqual(1, len(node_groups))
+        self.assertTrue("instanceType" not in node_groups[0]["container"])
 
     @mock_rand()
     def test_submit_dryrun(self) -> None:
@@ -223,6 +265,7 @@ class AWSBatchSchedulerTest(unittest.TestCase):
                     "torchx.pytorch.org/version": torchx.__version__,
                     "torchx.pytorch.org/app-name": "test",
                     "torchx.pytorch.org/user": "testuser",
+                    "FIZZ": "buzz",
                 },
             },
         )

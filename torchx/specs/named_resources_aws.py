@@ -29,9 +29,12 @@ Usage:
 
 """
 
+import warnings
 from typing import Callable, Mapping
 
 from torchx.specs.api import Resource
+
+EFA_DEVICE = "vpc.amazonaws.com/efa"
 
 # ecs and ec2 have memtax and currently AWS Batch uses hard memory limits
 # so we have to account for mem tax when registering these resources for AWS
@@ -39,8 +42,20 @@ from torchx.specs.api import Resource
 # 97% is based on empirical observation that works well for most instance types
 # see: https://docs.aws.amazon.com/batch/latest/userguide/memory-management.html
 MEM_TAX = 0.97
+
+# determines instance type for non-honogeneous CEs
+# see https://github.com/pytorch/torchx/issues/780
 K8S_ITYPE = "node.kubernetes.io/instance-type"
 GiB: int = int(1024 * MEM_TAX)
+
+
+def instance_type_from_resource(resource: Resource) -> str:
+    instance_type = resource.capabilities.get(K8S_ITYPE)
+    if instance_type is None:
+        warnings.warn(
+            "Cannot determine resource instance type which can cause issues for non-homogeneous CEs and multinode jobs. Consider providing torchx.specs.named_resources_aws:K8S_TYPE resource capability."
+        )
+    return instance_type
 
 
 def aws_p3_2xlarge() -> Resource:
@@ -63,20 +78,32 @@ def aws_p3_16xlarge() -> Resource:
 
 def aws_p3dn_24xlarge() -> Resource:
     return Resource(
-        cpu=96, gpu=8, memMB=768 * GiB, capabilities={K8S_ITYPE: "p3dn.24xlarge"}
+        cpu=96,
+        gpu=8,
+        memMB=768 * GiB,
+        capabilities={K8S_ITYPE: "p3dn.24xlarge"},
+        devices={EFA_DEVICE: 1},
     )
 
 
 def aws_p4d_24xlarge() -> Resource:
     return Resource(
-        cpu=96, gpu=8, memMB=1152 * GiB, capabilities={K8S_ITYPE: "p4d.24xlarge"}
+        cpu=96,
+        gpu=8,
+        memMB=1152 * GiB,
+        capabilities={K8S_ITYPE: "p4d.24xlarge"},
+        devices={EFA_DEVICE: 4},
     )
 
 
 def aws_p4de_24xlarge() -> Resource:
     # p4de has same cpu, gpu, memMB as p4d but gpu memory is 2x (32GB vs 64GB per GPU)
     return Resource(
-        cpu=96, gpu=8, memMB=1152 * GiB, capabilities={K8S_ITYPE: "p4de.24xlarge"}
+        cpu=96,
+        gpu=8,
+        memMB=1152 * GiB,
+        capabilities={K8S_ITYPE: "p4de.24xlarge"},
+        devices={EFA_DEVICE: 4},
     )
 
 
@@ -178,13 +205,15 @@ def aws_g5_48xlarge() -> Resource:
     )
 
 
-def aws_trn1_2xl() -> Resource:
-    return Resource(cpu=8, gpu=0, memMB=32 * GiB, capabilities={K8S_ITYPE: "trn1.2xl"})
-
-
-def aws_trn1_32xl() -> Resource:
+def aws_trn1_2xlarge() -> Resource:
     return Resource(
-        cpu=128, gpu=0, memMB=512 * GiB, capabilities={K8S_ITYPE: "trn1.32xl"}
+        cpu=8, gpu=0, memMB=32 * GiB, capabilities={K8S_ITYPE: "trn1.2xlarge"}
+    )
+
+
+def aws_trn1_32xlarge() -> Resource:
+    return Resource(
+        cpu=128, gpu=0, memMB=512 * GiB, capabilities={K8S_ITYPE: "trn1.32xlarge"}
     )
 
 
@@ -212,6 +241,6 @@ NAMED_RESOURCES: Mapping[str, Callable[[], Resource]] = {
     "aws_g5.12xlarge": aws_g5_12xlarge,
     "aws_g5.24xlarge": aws_g5_24xlarge,
     "aws_g5.48xlarge": aws_g5_48xlarge,
-    "aws_trn1.2xl": aws_trn1_2xl,
-    "aws_trn1.32xl": aws_trn1_32xl,
+    "aws_trn1.2xlarge": aws_trn1_2xlarge,
+    "aws_trn1.32xlarge": aws_trn1_32xlarge,
 }

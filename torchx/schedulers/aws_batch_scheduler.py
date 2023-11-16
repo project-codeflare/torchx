@@ -81,6 +81,7 @@ from torchx.specs.api import (
     runopts,
     VolumeMount,
 )
+from torchx.specs.named_resources_aws import instance_type_from_resource
 from torchx.util.types import none_throws
 from torchx.workspace.docker_workspace import DockerWorkspaceMixin
 from typing_extensions import TypedDict
@@ -244,6 +245,10 @@ def _role_to_node_properties(
         "mountPoints": mount_points,
         "volumes": volumes,
     }
+    if role.num_replicas > 1:
+        instance_type = instance_type_from_resource(role.resource)
+        if instance_type is not None:
+            container["instanceType"] = instance_type
 
     return {
         "targetNodes": f"{start_idx}:{start_idx + role.num_replicas - 1}",
@@ -378,7 +383,7 @@ class AWSBatchScheduler(DockerWorkspaceMixin, Scheduler[AWSBatchOpts]):
     See :py:func:`torchx.specs.parse_mounts` for more info.
 
     For other filesystems such as FSx you can mount them onto the host and bind
-    mount them into your job: https://aws.amazon.com/premiumsupport/knowledge-center/batch-fsx-lustre-file-system-mount/
+    mount them into your job: https://repost.aws/knowledge-center/batch-fsx-lustre-file-system-mount
 
     For Elastic Fabric Adapter (EFA) you'll need to use a device mount to mount
     them into the container: https://docs.aws.amazon.com/batch/latest/userguide/efa.html
@@ -408,6 +413,7 @@ class AWSBatchScheduler(DockerWorkspaceMixin, Scheduler[AWSBatchOpts]):
         log_client: Optional[Any] = None,
         docker_client: Optional["DockerClient"] = None,
     ) -> None:
+        # NOTE: make sure any new init options are supported in create_scheduler(...)
         super().__init__("aws_batch", session_name, docker_client=docker_client)
 
         # pyre-fixme[4]: Attribute annotation cannot be `Any`.
@@ -515,6 +521,7 @@ class AWSBatchScheduler(DockerWorkspaceMixin, Scheduler[AWSBatchOpts]):
                     TAG_TORCHX_VER: torchx.__version__,
                     TAG_TORCHX_APPNAME: app.name,
                     TAG_TORCHX_USER: cfg.get("user"),
+                    **app.metadata,
                 },
             },
             **({"schedulingPriority": priority} if share_id is not None else {}),
@@ -796,7 +803,18 @@ class AWSBatchScheduler(DockerWorkspaceMixin, Scheduler[AWSBatchOpts]):
                 yield event["message"] + "\n"
 
 
-def create_scheduler(session_name: str, **kwargs: object) -> AWSBatchScheduler:
+def create_scheduler(
+    session_name: str,
+    # pyre-fixme[2]: Parameter annotation cannot be `Any`.
+    client: Optional[Any] = None,
+    # pyre-fixme[2]: Parameter annotation cannot be `Any`.
+    log_client: Optional[Any] = None,
+    docker_client: Optional["DockerClient"] = None,
+    **kwargs: object,
+) -> AWSBatchScheduler:
     return AWSBatchScheduler(
         session_name=session_name,
+        client=client,
+        log_client=log_client,
+        docker_client=docker_client,
     )

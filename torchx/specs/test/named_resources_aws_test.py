@@ -31,8 +31,9 @@ from torchx.specs.named_resources_aws import (
     aws_p4d_24xlarge,
     aws_p4de_24xlarge,
     aws_t3_medium,
-    aws_trn1_2xl,
-    aws_trn1_32xl,
+    aws_trn1_2xlarge,
+    aws_trn1_32xlarge,
+    EFA_DEVICE,
     GiB,
     K8S_ITYPE,
     NAMED_RESOURCES,
@@ -60,6 +61,7 @@ class NamedResourcesTest(unittest.TestCase):
         self.assertEqual(96, p3dn_24.cpu)
         self.assertEqual(p3_16.gpu, p3dn_24.gpu)
         self.assertEqual(768 * GiB, p3dn_24.memMB)
+        self.assertEqual({EFA_DEVICE: 1}, p3dn_24.devices)
 
     def test_aws_p4(self) -> None:
         p4d = aws_p4d_24xlarge()
@@ -68,10 +70,12 @@ class NamedResourcesTest(unittest.TestCase):
         self.assertEqual(96, p4d.cpu)
         self.assertEqual(8, p4d.gpu)
         self.assertEqual(1152 * GiB, p4d.memMB)
+        self.assertEqual({EFA_DEVICE: 4}, p4d.devices)
 
         self.assertEqual(p4de.cpu, p4d.cpu)
         self.assertEqual(p4de.gpu, p4d.gpu)
         self.assertEqual(p4de.memMB, p4d.memMB)
+        self.assertEqual({EFA_DEVICE: 4}, p4de.devices)
 
     def test_aws_g4dn(self) -> None:
         g4d = aws_g4dn_xlarge()
@@ -152,13 +156,13 @@ class NamedResourcesTest(unittest.TestCase):
         self.assertEqual(g5_48.memMB, g5_12.memMB * 4)
 
     def test_aws_trn1(self) -> None:
-        trn1_2 = aws_trn1_2xl()
+        trn1_2 = aws_trn1_2xlarge()
 
         self.assertEqual(8, trn1_2.cpu)
         self.assertEqual(0, trn1_2.gpu)
         self.assertEqual(32 * GiB, trn1_2.memMB)
 
-        trn1_32 = aws_trn1_32xl()
+        trn1_32 = aws_trn1_32xlarge()
         self.assertEqual(trn1_32.cpu, trn1_2.cpu * 16)
         self.assertEqual(trn1_32.gpu, trn1_2.gpu)
         self.assertEqual(trn1_32.memMB, trn1_2.memMB * 16)
