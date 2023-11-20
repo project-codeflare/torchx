@@ -1119,7 +1119,7 @@ def get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
         return pod_name
     else: 
         core_api = client.CoreV1Api(self._api_client())
-        label_set = "appwrapper.mcad.ibm.com={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
+        label_set = "appwrapper.workload.codeflare.dev={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
         pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
         role_index: int
         for pod in pod_list.items:
