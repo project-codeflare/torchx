@@ -386,11 +386,15 @@ def role_to_pod(
     if network is not None:
         metadata.annotations.update({"k8s.v1.cni.cncf.io/networks": network})
 
+    #For large container images, pull the image in init_container to mitigate pytorch rendezvous timeout errors 
+    init_container = V1Container(name = "image-pull-container", image=role.image, command=["python"], args=["-c", "print('Pulled container image')"])
+
     if KUBERNETES_INDEXED_JOBS:
         return V1Pod(
             api_version="v1",
             kind="Pod",
             spec=V1PodSpec(
+                init_containers=[init_container],
                 containers=[container],
                 subdomain=unique_app_id,
                 image_pull_secrets=[imagesecret],
@@ -494,7 +498,7 @@ def mcad_svc(
                     target_port=int(service_port),
                 )
             ],
-            selector={"appwrapper.workload.codeflare.dev": svc_name},
+            selector={LABEL_UNIQUE_NAME: svc_name},
             session_affinity="None",
             type="ClusterIP",
         ),
@@ -520,7 +524,7 @@ def pod_to_job(unique_app_id: str, namespace: str, pod: "V1Pod", service:str, jo
         name=job_name,
         namespace=namespace,
         labels = {
-            "appwrapper.mcad.ibm.com": unique_app_id,
+            "appwrapper.workload.codeflare.dev": unique_app_id,
         }
     )
 
@@ -763,6 +767,7 @@ def create_job_objects(
                     app_id=unique_app_id,
                 )
             )
+
             job0 = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod0, service = mcad_svc_name, job_idx=job_idx, num_replicas = 1)
 
             genericitem: Dict[str, Any] = {
