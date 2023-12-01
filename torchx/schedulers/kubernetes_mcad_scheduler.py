@@ -626,7 +626,7 @@ def enable_retry(
     nested_specs = {"minAvailable": total_pods, "requeuing": requeue_dict}
     aw_spec["schedulingSpec"] = nested_specs
 
-#Backwards compatibility support for Kubernetes version < 1.22
+#Backwards compatibility support for Kubernetes version < 1.21
 def create_pod_objects(
     app: AppDef,
     unique_app_id: str,
@@ -728,8 +728,8 @@ def create_job_objects(
             priority_class_name,
             network,
         )
-        #TO DO: test Job -> replica ID using $JOB_COMPLETION_INDEX pod env variable
-        #TO DO: test torchrun variables to set replica_id (i.e. group_rank, global_rank, local_ranks, etc.)
+        #note: in indexed job implementation, replica_id is derived using role id and job-completion-index
+        # not the pod label
         pod.metadata.labels.update(
             pod_labels(
                 app=app,
@@ -779,7 +779,6 @@ def create_job_objects(
             job_idx += 1
             num_completions -= 1
       
-        #To do: need replica_role for role 0 pod 0
         if num_completions == 0:
             continue
         job = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod, service = mcad_svc_name, job_idx=job_idx, num_replicas = num_completions)
