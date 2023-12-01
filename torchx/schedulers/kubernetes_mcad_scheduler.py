@@ -528,10 +528,6 @@ def pod_to_job(unique_app_id: str, namespace: str, pod: "V1Pod", service:str, jo
         spec = pod.spec,
     )
 
-    #To Do: figure out appropriate restart policy here
-    restartPolicy = "Never",
-    pod_template.restartPolicy = "Never"
-
     spec = V1JobSpec(
         template = pod_template,
         completion_mode = "Indexed", 
