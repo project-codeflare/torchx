@@ -573,13 +573,18 @@ def get_unique_truncated_appid(app: AppDef) -> str:
     63 characters or less. When creating the unique app_id,
     this function calculates the max size to pass to
     make_unique. The PodGroup name includes 3 characters plus
-    the role_id characters. The minimum number of characters
+    the role_id characters. The optional job name includes 4 characters 
+    plus the total number of jobs. The minimum number of characters
     for the unique identifier is 4.  These amounts are taken into account.
     """
     default_size = 14
     uid_chars = 4
     pg_chars = 3 + len(app.roles)
-    size = 63 - (len(app.name) + uid_chars + pg_chars)
+    job_chars = 0
+    if KUBERNETES_INDEXED_JOBS:
+        num_jobs = len(app.roles) + 1
+        job_chars = 4 + num_jobs
+    size = 63 - (len(app.name) + uid_chars + pg_chars + job_chars)
 
     unique_id_size = default_size if size > default_size else size
 
@@ -587,7 +592,7 @@ def get_unique_truncated_appid(app: AppDef) -> str:
         msg = "Name size has too many characters for some Kubernetes objects. Truncating \
 application name."
         warnings.warn(msg)
-        end = 63 - uid_chars - pg_chars
+        end = 63 - uid_chars - pg_chars - job_chars
         substring = app.name[0:end]
         app.name = substring
         unique_id_size = 3
