@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import (
     Any,
+    TypeVar,
     cast,
     Dict,
     Iterable,
@@ -633,7 +634,7 @@ def create_pod_objects(
     coscheduler_name: Optional[str],
     priority_class_name: Optional[str],
     network: Optional[str],
-) -> List[Any]:
+) -> List[TypeVar]:
     genericitems = []
 
     for role_idx, role in enumerate(app.roles):
@@ -693,7 +694,7 @@ def create_job_objects(
     coscheduler_name: Optional[str],
     priority_class_name: Optional[str],
     network: Optional[str],
-) -> List[Any]:
+) -> List[TypeVar]:
 
     genericitems=[]
     job_idx = 0
@@ -702,11 +703,11 @@ def create_job_objects(
 
     for role_idx, role in enumerate(app.roles):
         num_completions = role.num_replicas 
-        replica_id = ""
+        replica_id = 0
         values = macros.Values(
             img_root="",
             app_id=unique_app_id,
-            replica_id=replica_id,
+            replica_id=str(replica_id),
             rank0_env=f"TORCHX_MCAD_{cleanup_str(app.roles[0].name)}_0_HOSTS".upper().replace(
                 "-", ""
             ),
@@ -799,7 +800,7 @@ def create_compute_objects(
     coscheduler_name: Optional[str],
     priority_class_name: Optional[str],
     network: Optional[str],
-) -> List[Any]:
+) -> List[TypeVar]:
     if KUBERNETES_INDEXED_JOBS:
         genericitems = create_job_objects(
             app=app,
