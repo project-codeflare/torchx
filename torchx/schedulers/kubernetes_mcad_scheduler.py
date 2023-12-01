@@ -164,11 +164,6 @@ LABEL_INSTANCE_TYPE = "node.kubernetes.io/instance-type"
 
 KUBERNETES_INDEXED_JOBS:bool = False
 
-def check_kubernetes_version(self):
-    version_info=self._get_kubernetes_version()
-    if(version_info["major"] >= 1 and version_info["minor"] >= 21):
-       globals()['KUBERNETES_INDEXED_JOBS'] = True
-
 def sanitize_for_serialization(obj: object) -> object:
     from kubernetes import client
 
@@ -574,7 +569,8 @@ def get_unique_truncated_appid(app: AppDef) -> str:
     this function calculates the max size to pass to
     make_unique. The PodGroup name includes 3 characters plus
     the role_id characters. The optional job name includes 4 characters 
-    plus the total number of jobs. The minimum number of characters
+    plus the total number of jobs plus 6 generated pod characters.
+     The minimum number of characters
     for the unique identifier is 4.  These amounts are taken into account.
     """
     default_size = 14
@@ -583,7 +579,7 @@ def get_unique_truncated_appid(app: AppDef) -> str:
     job_chars = 0
     if KUBERNETES_INDEXED_JOBS:
         num_jobs = len(app.roles) + 1
-        job_chars = 4 + num_jobs
+        job_chars = 10 + num_jobs
     size = 63 - (len(app.name) + uid_chars + pg_chars + job_chars)
 
     unique_id_size = default_size if size > default_size else size
@@ -1117,7 +1113,7 @@ def get_tasks_status_description_batchjob(status: "V1JobStatus") -> Dict[str, in
 def get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
     from kubernetes import client    
     namespace, name = app_id.split(":")
-    check_kubernetes_version(self)
+    self._check_kubernetes_version()
     if not KUBERNETES_INDEXED_JOBS:
         pod_name = cleanup_str(f"{name}-{k}")
         return pod_name
@@ -1301,6 +1297,11 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         api_client = client.CustomObjectsApi(self._api_client())
         return api_client
 
+    def _check_kubernetes_version(self) -> None:
+        version_info=self._get_kubernetes_version()
+        if(version_info["major"] >= 1 and version_info["minor"] >= 21):
+           globals()['KUBERNETES_INDEXED_JOBS'] = True
+   
     def _get_job_name_from_exception(self, e: "ApiException") -> Optional[str]:
         try:
             return json.loads(e.body)["details"]["name"]
@@ -1516,7 +1517,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             else:
                 raise
 
-        check_kubernetes_version(self)
+        self._check_kubernetes_version()
 
         if KUBERNETES_INDEXED_JOBS:
             from kubernetes.client import BatchV1Api
