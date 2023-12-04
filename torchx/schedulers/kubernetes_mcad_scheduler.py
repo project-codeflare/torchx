@@ -1306,6 +1306,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             label_set = "appwrapper.workload.codeflare.dev={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
             pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
             role_index: int
+            pod_name = ""
             for pod in pod_list.items:
                 if pod.metadata.labels['torchx.pytorch.org/role-name'] != role_name:
                     continue
@@ -1321,12 +1322,16 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                    job = "job1"
                    completion_index = str(k-1)
                 for pod in pod_list.items:
-                   if job in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == completion_index:
-                       return pod.metadata.name
+                   if job not in pod.metadata.labels['resourceName'] or pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] != completion_index:
+                       continue 
+                   pod_name = pod.metadata.name
+                 
             else:
                 for pod in pod_list.items:
-                    if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k):
-                        return pod.metadata.name
+                    if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] != str(k):
+                       continue 
+                    pod_name = pod.metadata.name
+            return pod_name
 
     def schedule(self, dryrun_info: AppDryRunInfo[KubernetesMCADJob]) -> str:
         from kubernetes.client.rest import ApiException
