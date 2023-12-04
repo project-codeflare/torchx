@@ -1107,41 +1107,6 @@ def get_tasks_status_description_batchjob(status: "V1JobStatus") -> Dict[str, in
 
     return results
 
-def get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
-    from kubernetes import client    
-    namespace, name = app_id.split(":")
-    self._check_kubernetes_version()
-    if not KUBERNETES_INDEXED_JOBS:
-        pod_name = cleanup_str(f"{name}-{k}")
-        return pod_name
-    else: 
-        core_api = client.CoreV1Api(self._api_client())
-        label_set = "appwrapper.workload.codeflare.dev={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
-        pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
-        role_index: int
-        for pod in pod_list.items:
-            if pod.metadata.labels['torchx.pytorch.org/role-name'] != role_name:
-                continue
-
-            role_index = int(pod.metadata.labels['torchx.pytorch.org/role-index']) 
-        if role_index == 0:
-            job: str
-            completion_index: str
-            if k == 0:
-               job = "job0"
-               completion_index = str(k)
-            else:
-               job = "job1"
-               completion_index = str(k-1)
-            for pod in pod_list.items:
-               if job in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == completion_index:
-                   return pod.metadata.name 
-        else:
-            for pod in pod_list.items:
-                if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k):
-                    return pod.metadata.name 
-
-
 @dataclass
 class KubernetesMCADJob:
     images_to_push: Dict[str, Tuple[str, str]]
@@ -1328,6 +1293,40 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         except ApiException as e:
             print(f"Exception calling Kubernetes VersionApi.getCode: {e}") 
             raise RuntimeError(f"Kubernetes version error: {e}")
+
+    def _get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
+        from kubernetes import client    
+        namespace, name = app_id.split(":")
+        self._check_kubernetes_version()
+        if not KUBERNETES_INDEXED_JOBS:
+            pod_name = cleanup_str(f"{name}-{k}")
+            return pod_name
+        else:  
+            core_api = client.CoreV1Api(self._api_client())
+            label_set = "appwrapper.workload.codeflare.dev={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
+            pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
+            role_index: int
+            for pod in pod_list.items:
+                if pod.metadata.labels['torchx.pytorch.org/role-name'] != role_name:
+                    continue
+
+                role_index = int(pod.metadata.labels['torchx.pytorch.org/role-index'])
+            if role_index == 0:
+                job: str
+                completion_index: str
+                if k == 0:
+                   job = "job0"
+                   completion_index = str(k)
+                else:
+                   job = "job1"
+                   completion_index = str(k-1)
+                for pod in pod_list.items:
+                   if job in pod.metadata.labels['resourceName'] and pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == completion_index:
+                       return pod.metadata.name
+            else:
+                for pod in pod_list.items:
+                    if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] == str(k):
+                        return pod.metadata.name
 
     def schedule(self, dryrun_info: AppDryRunInfo[KubernetesMCADJob]) -> str:
         from kubernetes.client.rest import ApiException
@@ -1639,7 +1638,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         namespace, name = app_id.split(":")
 
-        pod_name = get_pod_name_for_logiter(self, app_id=app_id, role_name=role_name, k=k) 
+        pod_name = self._get_pod_name_for_logiter(app_id=app_id, role_name=role_name, k=k) 
 
         args: Dict[str, object] = {
             "name": pod_name,
