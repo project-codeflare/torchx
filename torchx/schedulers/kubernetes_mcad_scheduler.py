@@ -36,7 +36,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import (
     Any,
-    TypeVar,
     cast,
     Dict,
     Iterable,
@@ -45,6 +44,7 @@ from typing import (
     Optional,
     Tuple,
     TYPE_CHECKING,
+    TypeVar,
 )
 
 import torchx
@@ -86,13 +86,13 @@ if TYPE_CHECKING:
         V1Container,
         V1ContainerPort,
         V1EnvVar,
+        V1Job,
+        V1JobSpec,
+        V1JobStatus,
         V1Pod,
         V1PodSpec,
         V1ResourceRequirements,
         V1Service,
-        V1Job,
-        V1JobSpec,
-        V1JobStatus,
     )
     from kubernetes.client.rest import ApiException
 
@@ -163,13 +163,15 @@ ANNOTATION_ISTIO_SIDECAR = "sidecar.istio.io/inject"
 
 LABEL_INSTANCE_TYPE = "node.kubernetes.io/instance-type"
 
-KUBERNETES_INDEXED_JOBS:bool = False
+KUBERNETES_INDEXED_JOBS: bool = False
+
 
 def sanitize_for_serialization(obj: object) -> object:
     from kubernetes import client
 
     api = client.ApiClient()
     return api.sanitize_for_serialization(obj)
+
 
 def role_to_pod(
     name: str,
@@ -321,7 +323,7 @@ def role_to_pod(
                 ),
                 value=f"{unique_app_id}-job0-0.{unique_app_id}",
             )
-        ] 
+        ]
     else:
         my_env_var = [
             V1EnvVar(
@@ -356,7 +358,7 @@ def role_to_pod(
     # Get correct formatting for image secret
     imagesecret = V1LocalObjectReference(name=image_secret)
 
-    metadata : V1ObjectMeta
+    metadata: V1ObjectMeta
 
     if KUBERNETES_INDEXED_JOBS:
         metadata = V1ObjectMeta(
@@ -382,8 +384,13 @@ def role_to_pod(
     if network is not None:
         metadata.annotations.update({"k8s.v1.cni.cncf.io/networks": network})
 
-    #For large container images, pull the image in init_container to mitigate pytorch rendezvous timeout errors 
-    init_container = V1Container(name = "image-pull-container", image=role.image, command=["python"], args=["-c", "print('Pulled container image')"])
+    # For large container images, pull the image in init_container to mitigate pytorch rendezvous timeout errors
+    init_container = V1Container(
+        name="image-pull-container",
+        image=role.image,
+        command=["python"],
+        args=["-c", "print('Pulled container image')"],
+    )
 
     if KUBERNETES_INDEXED_JOBS:
         return V1Pod(
@@ -404,23 +411,23 @@ def role_to_pod(
             metadata=metadata,
         )
     else:
-       return V1Pod(
-           api_version="v1",
-           kind="Pod",
-           spec=V1PodSpec(
-               containers=[container],
-               hostname=name,
-               subdomain=unique_app_id,
-               image_pull_secrets=[imagesecret],
-               restart_policy="Never",
-               service_account_name=service_account,
-               volumes=volumes,
-               node_selector=node_selector,
-               scheduler_name=coscheduler_name,
-               priority_class_name=priority_class_name,
-           ),
-           metadata=metadata,
-       )
+        return V1Pod(
+            api_version="v1",
+            kind="Pod",
+            spec=V1PodSpec(
+                containers=[container],
+                hostname=name,
+                subdomain=unique_app_id,
+                image_pull_secrets=[imagesecret],
+                restart_policy="Never",
+                service_account_name=service_account,
+                volumes=volumes,
+                node_selector=node_selector,
+                scheduler_name=coscheduler_name,
+                priority_class_name=priority_class_name,
+            ),
+            metadata=metadata,
+        )
 
 
 def create_pod_group(
@@ -503,15 +510,23 @@ def mcad_svc(
         ),
     )
 
-#Uses Indexed Jobs - requires kubernetes release 1.21 or higher
-def pod_to_job(unique_app_id: str, namespace: str, pod: "V1Pod", service:str, job_idx: int, num_replicas:int) -> "V1Job":
-    from kubernetes.client.models import (  # noqa: F811 redefinition of unused
+
+# Uses Indexed Jobs - requires kubernetes release 1.21 or higher
+def pod_to_job(
+    unique_app_id: str,
+    namespace: str,
+    pod: "V1Pod",
+    service: str,
+    job_idx: int,
+    num_replicas: int,
+) -> "V1Job":
+    from kubernetes.client.models import (  # noqa: F811,F401
         V1Job,
-        V1ObjectMeta,
-        V1PodTemplateSpec,
-        V1PodSpec,
-        V1Pod,
         V1JobSpec,
+        V1ObjectMeta,
+        V1Pod,
+        V1PodSpec,
+        V1PodTemplateSpec,
     )
 
     job_name = cleanup_str(f"{unique_app_id}-job{job_idx}")
@@ -519,32 +534,33 @@ def pod_to_job(unique_app_id: str, namespace: str, pod: "V1Pod", service:str, jo
     metadata = V1ObjectMeta(
         name=job_name,
         namespace=namespace,
-        labels = {
+        labels={
             "appwrapper.workload.codeflare.dev": unique_app_id,
-        }
+        },
     )
 
     pod_template = V1PodTemplateSpec(
-        metadata = pod.metadata,
-        spec = pod.spec,
+        metadata=pod.metadata,
+        spec=pod.spec,
     )
 
     spec = V1JobSpec(
-        template = pod_template,
-        completion_mode = "Indexed", 
-        completions = num_replicas,
-        parallelism = num_replicas,
-        backoff_limit = 0,
-   )
+        template=pod_template,
+        completion_mode="Indexed",
+        completions=num_replicas,
+        parallelism=num_replicas,
+        backoff_limit=0,
+    )
 
-    job=V1Job(
+    job = V1Job(
         api_version="batch/v1",
         kind="Job",
-        metadata = metadata,
-        spec = spec,
+        metadata=metadata,
+        spec=spec,
     )
-  
+
     return job
+
 
 def cleanup_str(data: str) -> str:
     """
@@ -565,7 +581,7 @@ def get_unique_truncated_appid(app: AppDef) -> str:
     63 characters or less. When creating the unique app_id,
     this function calculates the max size to pass to
     make_unique. The PodGroup name includes 3 characters plus
-    the role_id characters. The optional job name includes 4 characters 
+    the role_id characters. The optional job name includes 4 characters
     plus the total number of jobs plus 6 generated pod characters.
      The minimum number of characters
     for the unique identifier is 4.  These amounts are taken into account.
@@ -624,7 +640,8 @@ def enable_retry(
     nested_specs = {"minAvailable": total_pods, "requeuing": requeue_dict}
     aw_spec["schedulingSpec"] = nested_specs
 
-#Backwards compatibility support for Kubernetes version < 1.21
+
+# Backwards compatibility support for Kubernetes version < 1.21
 def create_pod_objects(
     app: AppDef,
     unique_app_id: str,
@@ -684,6 +701,7 @@ def create_pod_objects(
             genericitems.append(genericitem)
     return genericitems
 
+
 def create_job_objects(
     app: AppDef,
     unique_app_id: str,
@@ -695,14 +713,13 @@ def create_job_objects(
     priority_class_name: Optional[str],
     network: Optional[str],
 ) -> List[TypeVar]:
-
-    genericitems=[]
+    genericitems = []
     job_idx = 0
-    #To deprecate in role to pod function: name field
-    deprecated_name = "" 
+    # To deprecate in role to pod function: name field
+    deprecated_name = ""
 
     for role_idx, role in enumerate(app.roles):
-        num_completions = role.num_replicas 
+        num_completions = role.num_replicas
         replica_id = 0
         values = macros.Values(
             img_root="",
@@ -712,9 +729,9 @@ def create_job_objects(
                 "-", ""
             ),
         )
-        
+
         replica_role = values.apply(role)
-        
+
         pod = role_to_pod(
             deprecated_name,
             unique_app_id,
@@ -726,7 +743,7 @@ def create_job_objects(
             priority_class_name,
             network,
         )
-        #note: in indexed job implementation, replica_id is derived using role id and job-completion-index
+        # note: in indexed job implementation, replica_id is derived using role id and job-completion-index
         # not the pod label
         pod.metadata.labels.update(
             pod_labels(
@@ -740,8 +757,8 @@ def create_job_objects(
         )
         if role_idx == 0:
             values.rank0_env = "TORCHX_RANK0_HOST"
-            replica_role_rank0 = values.apply(role)   
-            replica_role_rank0.env["TORCHX_RANK0_HOST"] = "localhost"  
+            replica_role_rank0 = values.apply(role)
+            replica_role_rank0.env["TORCHX_RANK0_HOST"] = "localhost"
 
             pod0 = role_to_pod(
                 deprecated_name,
@@ -754,7 +771,7 @@ def create_job_objects(
                 priority_class_name,
                 network,
             )
-            
+
             pod0.metadata.labels.update(
                 pod_labels(
                     app=app,
@@ -766,29 +783,44 @@ def create_job_objects(
                 )
             )
 
-            job0 = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod0, service = mcad_svc_name, job_idx=job_idx, num_replicas = 1)
+            job0 = pod_to_job(
+                unique_app_id=unique_app_id,
+                namespace=namespace,
+                pod=pod0,
+                service=mcad_svc_name,
+                job_idx=job_idx,
+                num_replicas=1,
+            )
 
             genericitem: Dict[str, Any] = {
-                    "replicas": 1,
-                    "generictemplate": job0,
-                    "completionstatus": "Complete,Failed",
+                "replicas": 1,
+                "generictemplate": job0,
+                "completionstatus": "Complete,Failed",
             }
             genericitems.append(genericitem)
             job_idx += 1
             num_completions -= 1
-      
+
         if num_completions == 0:
             continue
-        job = pod_to_job(unique_app_id = unique_app_id, namespace = namespace, pod = pod, service = mcad_svc_name, job_idx=job_idx, num_replicas = num_completions)
+        job = pod_to_job(
+            unique_app_id=unique_app_id,
+            namespace=namespace,
+            pod=pod,
+            service=mcad_svc_name,
+            job_idx=job_idx,
+            num_replicas=num_completions,
+        )
 
         genericitem: Dict[str, Any] = {
-                "replicas": 1,
-                "generictemplate": job,
-                "completionstatus": "Complete,Failed",
+            "replicas": 1,
+            "generictemplate": job,
+            "completionstatus": "Complete,Failed",
         }
         genericitems.append(genericitem)
 
     return genericitems
+
 
 def create_compute_objects(
     app: AppDef,
@@ -824,8 +856,9 @@ def create_compute_objects(
             coscheduler_name=coscheduler_name,
             priority_class_name=priority_class_name,
             network=network,
-        ) 
+        )
         return genericitems
+
 
 def app_to_resource(
     app: AppDef,
@@ -876,7 +909,7 @@ def app_to_resource(
     }
     genericitems.append(genericitem_svc)
 
-    #PLACEHOLDER
+    # PLACEHOLDER
     genericitems_compute = create_compute_objects(
         app=app,
         unique_app_id=unique_app_id,
@@ -890,7 +923,7 @@ def app_to_resource(
     )
     for compute_item in genericitems_compute:
         genericitems.append(compute_item)
-    
+
     aw_spec: Dict[str, Any] = {
         "resources": {
             "GenericItems": genericitems,
@@ -914,9 +947,12 @@ def app_to_resource(
 
     return resource
 
+
 # Helper function for V1Job information -> TorchX Role
-def get_role_information_batchjob(job_resp: "V1Job", roles: Dict[str, Any]) -> Dict[str, Any]:
-    #roles = {}
+def get_role_information_batchjob(
+    job_resp: "V1Job", roles: Dict[str, Any]
+) -> Dict[str, Any]:
+    # roles = {}
     labels = job_resp.spec.template.metadata.labels
     role_name = labels["torchx.pytorch.org/role-name"]
 
@@ -930,18 +966,18 @@ def get_role_information_batchjob(job_resp: "V1Job", roles: Dict[str, Any]) -> D
 
         roles[role_name].metadata = job_resp.spec.template.metadata
 
-        container = job_resp.spec.template.spec.containers[0] 
+        container = job_resp.spec.template.spec.containers[0]
         roles[role_name].image = container.image
         roles[role_name].args = container.command
         roles[role_name].port_map = container.ports
         roles[role_name].env = container.env
         roles[role_name].mounts = container.volume_mounts
 
-        #resources
+        # resources
         resources = container.resources.requests
         resource_req = Resource(cpu=-1, gpu=-1, memMB=-1)
 
-        if resources != None:
+        if resources is not None:
             if CPU_KEY in resources:
                 resource_req.cpu = resources[CPU_KEY]
             # Substring matching to accomodate different gpu types
@@ -961,6 +997,7 @@ def get_role_information_batchjob(job_resp: "V1Job", roles: Dict[str, Any]) -> D
     else:
         roles[role_name].num_replicas += job_resp.spec.parallelism
     return roles
+
 
 # Helper function for MCAD generic items information -> TorchX Role
 def get_role_information(generic_items: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
@@ -994,9 +1031,9 @@ def get_role_information(generic_items: Iterable[Dict[str, Any]]) -> Dict[str, A
         if GT_KEY not in generic_item.keys():
             continue
         gt_result = generic_item[GT_KEY]
-        #if KUBERNETES_INDEXED_JOBS and gt_result["kind"]=="Job":
+        # if KUBERNETES_INDEXED_JOBS and gt_result["kind"]=="Job":
         #    print(f"CHECK gt_result = {gt_result}")
-        #    gt_result=gt_result["template"] 
+        #    gt_result=gt_result["template"]
 
         if METADATA_KEY not in gt_result.keys():
             continue
@@ -1097,6 +1134,7 @@ def get_tasks_status_description(status: Dict[str, str]) -> Dict[str, int]:
 
     return results
 
+
 # Does not handle not ready to dispatch or job initialization case
 def get_tasks_status_description_batchjob(status: "V1JobStatus") -> Dict[str, int]:
     results = {}
@@ -1106,6 +1144,7 @@ def get_tasks_status_description_batchjob(status: "V1JobStatus") -> Dict[str, in
     results["Succeeded"] = int(status.succeeded or 0)
 
     return results
+
 
 @dataclass
 class KubernetesMCADJob:
@@ -1260,10 +1299,10 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         return api_client
 
     def _check_kubernetes_version(self) -> None:
-        version_info=self._get_kubernetes_version()
-        if(version_info["major"] >= 1 and version_info["minor"] >= 21):
-           globals()['KUBERNETES_INDEXED_JOBS'] = True
-   
+        version_info = self._get_kubernetes_version()
+        if version_info["major"] >= 1 and version_info["minor"] >= 21:
+            globals()["KUBERNETES_INDEXED_JOBS"] = True
+
     def _get_job_name_from_exception(self, e: "ApiException") -> Optional[str]:
         try:
             return json.loads(e.body)["details"]["name"]
@@ -1280,56 +1319,69 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
     def _get_kubernetes_version(self) -> Dict[str, int]:
         from kubernetes import client
         from kubernetes.client.rest import ApiException
- 
+
         api_instance = client.VersionApi(self._api_client())
-       
+
         try:
             version_info = api_instance.get_code()
             version_info = {
-                "major" : int(version_info.major),
-                "minor" : int(version_info.minor)
+                "major": int(version_info.major),
+                "minor": int(version_info.minor),
             }
             return version_info
         except ApiException as e:
-            print(f"Exception calling Kubernetes VersionApi.getCode: {e}") 
+            print(f"Exception calling Kubernetes VersionApi.getCode: {e}")
             raise RuntimeError(f"Kubernetes version error: {e}")
 
     def _get_pod_name_for_logiter(self, app_id: str, role_name: str, k: int) -> str:
-        from kubernetes import client    
+        from kubernetes import client
+
         namespace, name = app_id.split(":")
         self._check_kubernetes_version()
         if not KUBERNETES_INDEXED_JOBS:
             pod_name = cleanup_str(f"{name}-{k}")
             return pod_name
-        else:  
+        else:
             core_api = client.CoreV1Api(self._api_client())
-            label_set = "appwrapper.workload.codeflare.dev={}".format(name) + ",torchx.pytorch.org/role-name={}".format(role_name)
-            pod_list=core_api.list_namespaced_pod(namespace=namespace, label_selector=label_set)
+            label_set = "appwrapper.workload.codeflare.dev={}".format(
+                name
+            ) + ",torchx.pytorch.org/role-name={}".format(role_name)
+            pod_list = core_api.list_namespaced_pod(
+                namespace=namespace, label_selector=label_set
+            )
             role_index: int
             pod_name = ""
             for pod in pod_list.items:
-                if pod.metadata.labels['torchx.pytorch.org/role-name'] != role_name:
+                if pod.metadata.labels["torchx.pytorch.org/role-name"] != role_name:
                     continue
 
-                role_index = int(pod.metadata.labels['torchx.pytorch.org/role-index'])
+                role_index = int(pod.metadata.labels["torchx.pytorch.org/role-index"])
             if role_index == 0:
                 job: str
                 completion_index: str
                 if k == 0:
-                   job = "job0"
-                   completion_index = str(k)
+                    job = "job0"
+                    completion_index = str(k)
                 else:
-                   job = "job1"
-                   completion_index = str(k-1)
+                    job = "job1"
+                    completion_index = str(k - 1)
                 for pod in pod_list.items:
-                   if job not in pod.metadata.labels['resourceName'] or pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] != completion_index:
-                       continue 
-                   pod_name = pod.metadata.name
-                 
+                    if (
+                        job not in pod.metadata.labels["resourceName"]
+                        or pod.metadata.annotations[
+                            "batch.kubernetes.io/job-completion-index"
+                        ]
+                        != completion_index
+                    ):
+                        continue
+                    pod_name = pod.metadata.name
+
             else:
                 for pod in pod_list.items:
-                    if pod.metadata.annotations['batch.kubernetes.io/job-completion-index'] != str(k):
-                       continue 
+                    if pod.metadata.annotations[
+                        "batch.kubernetes.io/job-completion-index"
+                    ] != str(k):
+                        continue
                     pod_name = pod.metadata.name
             return pod_name
 
@@ -1370,10 +1422,10 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         # map any local images to the remote image
         # images_to_push = self._update_app_images(app, cfg.get("image_repo"))
         images_to_push = self.dryrun_push_images(app, cast(Mapping[str, CfgVal], cfg))
- 
-        version_info=self._get_kubernetes_version()
-        if(version_info["major"] >= 1 and version_info["minor"] >= 21):
-           globals()['KUBERNETES_INDEXED_JOBS'] = True
+
+        version_info = self._get_kubernetes_version()
+        if version_info["major"] >= 1 and version_info["minor"] >= 21:
+            globals()["KUBERNETES_INDEXED_JOBS"] = True
 
         service_account = cfg.get("service_account")
         assert service_account is None or isinstance(
@@ -1522,11 +1574,12 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         if KUBERNETES_INDEXED_JOBS:
             from kubernetes.client import BatchV1Api
+
             batch_api = BatchV1Api(self._client)
             task_status = []
             roles = {}
             if "status" in api_resp.keys():
-                #get the state of the appwrapper
+                # get the state of the appwrapper
                 status = api_resp["status"]
                 status = api_resp["status"]
                 state = status["state"]
@@ -1540,13 +1593,15 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                             job_api_resp = batch_api.read_namespaced_job(
                                 job_name, namespace, pretty="true"
                             )
-                            job_status : "V1JobStatus" = job_api_resp.status
-                             
-                            tasks_results = get_tasks_status_description_batchjob(job_status)
+                            job_status: "V1JobStatus" = job_api_resp.status
+
+                            tasks_results = get_tasks_status_description_batchjob(
+                                job_status
+                            )
                             for key, value in tasks_results.items():
                                 for id in range(0, value):
                                     task_status.append(key)
-                          
+
                             roles = get_role_information_batchjob(job_api_resp, roles)
                 task_count = 0
                 for role in roles:
@@ -1557,11 +1612,13 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                     for idx in range(0, roles[role].num_replicas):
                         state = TASK_STATE[task_status[task_count]]
                         roles_statuses[role].replicas.append(
-                            ReplicaStatus(id=int(idx), role=role, state=state, hostname="")
+                            ReplicaStatus(
+                                id=int(idx), role=role, state=state, hostname=""
+                            )
                         )
                         task_count += 1
             else:
-               app_state = AppState.UNKNOWN
+                app_state = AppState.UNKNOWN
 
             return DescribeAppResponse(
                 app_id=app_id,
@@ -1569,7 +1626,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                 roles_statuses=list(roles_statuses.values()),
                 state=app_state,
             )
- 
+
         else:
             task_status = []
             if "status" in api_resp.keys():
@@ -1607,7 +1664,9 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
                     for idx in range(0, roles[role].num_replicas):
                         state = TASK_STATE[task_status[task_count]]
                         roles_statuses[role].replicas.append(
-                            ReplicaStatus(id=int(idx), role=role, state=state, hostname="")
+                            ReplicaStatus(
+                                id=int(idx), role=role, state=state, hostname=""
+                            )
                         )
                         task_count += 1
 
@@ -1643,7 +1702,9 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         namespace, name = app_id.split(":")
 
-        pod_name = self._get_pod_name_for_logiter(app_id=app_id, role_name=role_name, k=k) 
+        pod_name = self._get_pod_name_for_logiter(
+            app_id=app_id, role_name=role_name, k=k
+        )
 
         args: Dict[str, object] = {
             "name": pod_name,
