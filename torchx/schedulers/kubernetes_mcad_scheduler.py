@@ -315,7 +315,7 @@ def role_to_pod(
 
     my_env_var = []
 
-    if KUBERNETES_INDEXED_JOBS:
+    if KUBERNETES_INDEXED_JOBS is True:
         my_env_var = [
             V1EnvVar(
                 name=f"TORCHX_MCAD_{cleanup_str(role.name)}_0_HOSTS".upper().replace(
@@ -335,7 +335,7 @@ def role_to_pod(
         ]
 
     container_name = unique_app_id + "-c"
-    if not KUBERNETES_INDEXED_JOBS:
+    if KUBERNETES_INDEXED_JOBS is False:
         container_name = name
 
     container = V1Container(
@@ -360,7 +360,7 @@ def role_to_pod(
 
     metadata: V1ObjectMeta
 
-    if KUBERNETES_INDEXED_JOBS:
+    if KUBERNETES_INDEXED_JOBS is True:
         metadata = V1ObjectMeta(
             annotations={
                 # Disable the istio sidecar as it prevents the containers from
@@ -392,7 +392,7 @@ def role_to_pod(
         args=["-c", "print('Pulled container image')"],
     )
 
-    if KUBERNETES_INDEXED_JOBS:
+    if KUBERNETES_INDEXED_JOBS is True:
         return V1Pod(
             api_version="v1",
             kind="Pod",
@@ -590,7 +590,7 @@ def get_unique_truncated_appid(app: AppDef) -> str:
     uid_chars = 4
     pg_chars = 3 + len(app.roles)
     job_chars = 0
-    if KUBERNETES_INDEXED_JOBS:
+    if KUBERNETES_INDEXED_JOBS is True:
         num_jobs = len(app.roles) + 1
         job_chars = 10 + num_jobs
     size = 63 - (len(app.name) + uid_chars + pg_chars + job_chars)
@@ -833,7 +833,7 @@ def create_compute_objects(
     priority_class_name: Optional[str],
     network: Optional[str],
 ) -> List[TypeVar]:
-    if KUBERNETES_INDEXED_JOBS:
+    if KUBERNETES_INDEXED_JOBS is True:
         genericitems = create_job_objects(
             app=app,
             unique_app_id=unique_app_id,
@@ -1338,7 +1338,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         namespace, name = app_id.split(":")
         self._check_kubernetes_version()
-        if not KUBERNETES_INDEXED_JOBS:
+        if KUBERNETES_INDEXED_JOBS is False:
             pod_name = cleanup_str(f"{name}-{k}")
             return pod_name
         else:
@@ -1572,7 +1572,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
 
         self._check_kubernetes_version()
 
-        if KUBERNETES_INDEXED_JOBS:
+        if KUBERNETES_INDEXED_JOBS is True:
             from kubernetes.client import BatchV1Api
 
             batch_api = BatchV1Api(self._client)
