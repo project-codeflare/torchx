@@ -1303,6 +1303,13 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         if version_info["major"] >= 1 and version_info["minor"] >= 21:
             globals()["KUBERNETES_INDEXED_JOBS"] = True
 
+    def _check_supports_indexed_jobs(self) -> bool:
+        version_info = self._get_kubernetes_version()
+        indexed_jobs = False
+        if version_info["major"] >= 1 and version_info["minor"] >= 21:
+            indexed_jobs = True
+        return indexed_jobs
+
     def _get_job_name_from_exception(self, e: "ApiException") -> Optional[str]:
         try:
             return json.loads(e.body)["details"]["name"]
