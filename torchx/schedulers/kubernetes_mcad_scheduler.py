@@ -163,9 +163,6 @@ ANNOTATION_ISTIO_SIDECAR = "sidecar.istio.io/inject"
 
 LABEL_INSTANCE_TYPE = "node.kubernetes.io/instance-type"
 
-#KUBERNETES_INDEXED_JOBS: bool = False
-
-
 def sanitize_for_serialization(obj: object) -> object:
     from kubernetes import client
 
@@ -316,7 +313,6 @@ def role_to_pod(
 
     my_env_var = []
 
-    #if KUBERNETES_INDEXED_JOBS is True:
     if use_indexed_jobs is True:
         my_env_var = [
             V1EnvVar(
@@ -337,7 +333,6 @@ def role_to_pod(
         ]
 
     container_name = unique_app_id + "-c"
-    #if KUBERNETES_INDEXED_JOBS is False:
     if use_indexed_jobs is False:
         container_name = name
 
@@ -363,7 +358,6 @@ def role_to_pod(
 
     metadata: V1ObjectMeta
 
-    #if KUBERNETES_INDEXED_JOBS is True:
     if use_indexed_jobs is True:
         metadata = V1ObjectMeta(
             annotations={
@@ -396,7 +390,6 @@ def role_to_pod(
         args=["-c", "print('Pulled container image')"],
     )
 
-    #if KUBERNETES_INDEXED_JOBS is True:
     if use_indexed_jobs is True:
         return V1Pod(
             api_version="v1",
@@ -595,7 +588,6 @@ def get_unique_truncated_appid(app: AppDef, use_indexed_jobs: bool) -> str:
     uid_chars = 4
     pg_chars = 3 + len(app.roles)
     job_chars = 0
-    #if KUBERNETES_INDEXED_JOBS is True:
     if use_indexed_jobs is True:
         num_jobs = len(app.roles) + 1
         job_chars = 10 + num_jobs
@@ -845,7 +837,6 @@ def create_compute_objects(
     priority_class_name: Optional[str],
     network: Optional[str],
 ) -> List[TypeVar]:
-    #if KUBERNETES_INDEXED_JOBS is True:
     if use_indexed_jobs is True:
         genericitems = create_job_objects(
             app=app,
@@ -1048,9 +1039,6 @@ def get_role_information(generic_items: Iterable[Dict[str, Any]]) -> Dict[str, A
         if GT_KEY not in generic_item.keys():
             continue
         gt_result = generic_item[GT_KEY]
-        # if KUBERNETES_INDEXED_JOBS and gt_result["kind"]=="Job":
-        #    print(f"CHECK gt_result = {gt_result}")
-        #    gt_result=gt_result["template"]
 
         if METADATA_KEY not in gt_result.keys():
             continue
@@ -1315,11 +1303,6 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         api_client = client.CustomObjectsApi(self._api_client())
         return api_client
 
-    def _check_kubernetes_version(self) -> None:
-        version_info = self._get_kubernetes_version()
-        if version_info["major"] >= 1 and version_info["minor"] >= 21:
-            globals()["KUBERNETES_INDEXED_JOBS"] = True
-
     def _check_supports_indexed_jobs(self) -> bool:
         version_info = self._get_kubernetes_version()
         indexed_jobs = False
@@ -1361,7 +1344,6 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         from kubernetes import client
 
         namespace, name = app_id.split(":")
-        #self._check_kubernetes_version()
         indexed_jobs = self._check_supports_indexed_jobs()
         if indexed_jobs is False:
             pod_name = cleanup_str(f"{name}-{k}")
@@ -1448,9 +1430,6 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         # images_to_push = self._update_app_images(app, cfg.get("image_repo"))
         images_to_push = self.dryrun_push_images(app, cast(Mapping[str, CfgVal], cfg))
 
-        #version_info = self._get_kubernetes_version()
-        #if version_info["major"] >= 1 and version_info["minor"] >= 21:
-        #    globals()["KUBERNETES_INDEXED_JOBS"] = True
         use_indexed_jobs = self._check_supports_indexed_jobs()
 
         service_account = cfg.get("service_account")
@@ -1597,7 +1576,6 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             else:
                 raise
 
-        #self._check_kubernetes_version()
         indexed_jobs = self._check_supports_indexed_jobs() 
         
         if indexed_jobs is True:
