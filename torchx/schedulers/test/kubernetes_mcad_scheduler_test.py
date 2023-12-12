@@ -178,6 +178,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
             resource = app_to_resource(
                 app,
                 "default",
+                use_indexed_jobs=False,
                 service_account=None,
                 image_secret=None,
                 coscheduler_name=None,
@@ -206,6 +207,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
         resource = app_to_resource(
             app,
             "default",
+            use_indexed_jobs=False,
             service_account=None,
             image_secret=None,
             coscheduler_name=None,
@@ -231,6 +233,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
         resource = app_to_resource(
             app,
             "default",
+            use_indexed_jobs=False,
             service_account=None,
             image_secret=None,
             coscheduler_name=None,
@@ -264,11 +267,13 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
         coscheduler_name = "test-co-scheduler-name"
         priority_class_name = "default-priority"
         network = "test-network-conf"
+        use_indexed_jobs = False
         pod = role_to_pod(
             "app-name-0",
             unique_app_name,
             "test_namespace",
             app.roles[0],
+            use_indexed_jobs,
             service_account="srvacc",
             image_secret=image_secret,
             coscheduler_name=coscheduler_name,
@@ -475,46 +480,44 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
         self.assertEqual("", cleanup_str("!!!"))
         self.assertEqual("abcd1234", cleanup_str("1234abcd1234"))
 
-    @patch('torchx.schedulers.kubernetes_mcad_scheduler.KUBERNETES_INDEXED_JOBS', False)
     def test_get_unique_truncated_appid(self) -> None:
         scheduler = create_scheduler("test")
         app = _test_app()
+        use_indexed_jobs = False
+
         app.name = "abcde"
-        self.assertEqual(20, len(get_unique_truncated_appid(app)))
-        self.assertIn(app.name, get_unique_truncated_appid(app))
+        self.assertEqual(20, len(get_unique_truncated_appid(app, use_indexed_jobs)))
+        self.assertIn(app.name, get_unique_truncated_appid(app, use_indexed_jobs))
 
         app.name = "abcdefghijklmnopqrstuvwxyz012345678910111213141516"
-        self.assertEqual(56, len(get_unique_truncated_appid(app)))
-        self.assertIn(app.name, get_unique_truncated_appid(app))
+        self.assertEqual(56, len(get_unique_truncated_appid(app, use_indexed_jobs)))
+        self.assertIn(app.name, get_unique_truncated_appid(app, use_indexed_jobs))
 
         app.name = (
             "abcdefghijklmnopqrstuvwxyz012345678910111213141516171819202122232425"
         )
-        self.assertEqual(59, len(get_unique_truncated_appid(app)))
+        self.assertEqual(59, len(get_unique_truncated_appid(app, use_indexed_jobs)))
         self.assertIn(
             "abcdefghijklmnopqrstuvwxyz01234567891011121314151617181",
-            get_unique_truncated_appid(app),
+            get_unique_truncated_appid(app, use_indexed_jobs),
         )
-        self.assertNotIn("9202122232425", get_unique_truncated_appid(app))
+        self.assertNotIn("9202122232425", get_unique_truncated_appid(app, use_indexed_jobs))
 
-    @patch('torchx.schedulers.kubernetes_mcad_scheduler.KUBERNETES_INDEXED_JOBS', True)
-    def test_get_unique_truncated_appid_jobs(self) -> None:
-        scheduler = create_scheduler("test")
-        app = _test_app()
+        use_indexed_jobs = True
 
         app.name = "abcdefghijklmnopqrstuvwxyz012345678910111213141516"
-        self.assertEqual(47, len(get_unique_truncated_appid(app)))
-        self.assertIn(app.name, get_unique_truncated_appid(app))
+        self.assertEqual(47, len(get_unique_truncated_appid(app, use_indexed_jobs)))
+        self.assertIn(app.name, get_unique_truncated_appid(app, use_indexed_jobs))
 
         app.name = (
             "abcdefghijklmnopqrstuvwxyz012345678910111213141516171819202122232425"
         )
-        self.assertEqual(47, len(get_unique_truncated_appid(app)))
+        self.assertEqual(47, len(get_unique_truncated_appid(app, use_indexed_jobs)))
         self.assertIn(
             "abcdefghijklmnopqrstuvwxyz0123456789101112",
-            get_unique_truncated_appid(app),
+            get_unique_truncated_appid(app, use_indexed_jobs),
         )
-        self.assertNotIn("9202122232425", get_unique_truncated_appid(app))
+        self.assertNotIn("9202122232425", get_unique_truncated_appid(app, use_indexed_jobs))
 
     def test_get_port_for_service(self) -> None:
         scheduler = create_scheduler("test")
@@ -1300,6 +1303,7 @@ spec:
             "foo-unique",
             "testnamespace",
             role,
+            use_indexed_jobs=False,
             service_account="",
             image_secret="",
             coscheduler_name="",
@@ -1359,6 +1363,7 @@ spec:
             "foo-unique",
             "testnamespace",
             role,
+            use_indexed_jobs=False,
             service_account="",
             image_secret="",
             coscheduler_name="",
@@ -1419,6 +1424,7 @@ spec:
             "foo-unique",
             "testnamespace",
             role,
+            use_indexed_jobs=False,
             service_account="",
             image_secret="",
             coscheduler_name="",
@@ -1456,6 +1462,7 @@ spec:
             "foo-unique",
             "testnamespace",
             role,
+            use_indexed_jobs=False,
             service_account="",
             image_secret="",
             coscheduler_name="",
@@ -2136,3 +2143,6 @@ class KubernetesMCADSchedulerNoImportTest(unittest.TestCase):
 
         with self.assertRaises(ModuleNotFoundError):
             scheduler._submit_dryrun(app, cfg)
+
+if __name__=='__main__':
+    unittest.main()
