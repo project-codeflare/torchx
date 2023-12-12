@@ -186,7 +186,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
                 priority=0,
             )
             actual_cmd = (
-                resource["spec"]["resources"]["GenericItems"][0]["generictemplate"]
+                resource["spec"]["resources"]["GenericItems"][1]["generictemplate"]
                 .spec.containers[0]
                 .command
             )
