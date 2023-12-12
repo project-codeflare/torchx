@@ -163,7 +163,7 @@ ANNOTATION_ISTIO_SIDECAR = "sidecar.istio.io/inject"
 
 LABEL_INSTANCE_TYPE = "node.kubernetes.io/instance-type"
 
-KUBERNETES_INDEXED_JOBS: bool = False
+#KUBERNETES_INDEXED_JOBS: bool = False
 
 
 def sanitize_for_serialization(obj: object) -> object:
@@ -178,6 +178,7 @@ def role_to_pod(
     unique_app_id: str,
     namespace: str,
     role: Role,
+    use_indexed_jobs: bool,
     service_account: Optional[str],
     image_secret: Optional[str],
     coscheduler_name: Optional[str],
@@ -315,7 +316,8 @@ def role_to_pod(
 
     my_env_var = []
 
-    if KUBERNETES_INDEXED_JOBS is True:
+    #if KUBERNETES_INDEXED_JOBS is True:
+    if use_indexed_jobs is True:
         my_env_var = [
             V1EnvVar(
                 name=f"TORCHX_MCAD_{cleanup_str(role.name)}_0_HOSTS".upper().replace(
@@ -335,7 +337,8 @@ def role_to_pod(
         ]
 
     container_name = unique_app_id + "-c"
-    if KUBERNETES_INDEXED_JOBS is False:
+    #if KUBERNETES_INDEXED_JOBS is False:
+    if use_indexed_jobs is False:
         container_name = name
 
     container = V1Container(
@@ -360,7 +363,8 @@ def role_to_pod(
 
     metadata: V1ObjectMeta
 
-    if KUBERNETES_INDEXED_JOBS is True:
+    #if KUBERNETES_INDEXED_JOBS is True:
+    if use_indexed_jobs is True:
         metadata = V1ObjectMeta(
             annotations={
                 # Disable the istio sidecar as it prevents the containers from
@@ -392,7 +396,8 @@ def role_to_pod(
         args=["-c", "print('Pulled container image')"],
     )
 
-    if KUBERNETES_INDEXED_JOBS is True:
+    #if KUBERNETES_INDEXED_JOBS is True:
+    if use_indexed_jobs is True:
         return V1Pod(
             api_version="v1",
             kind="Pod",
@@ -575,7 +580,7 @@ def cleanup_str(data: str) -> str:
     return "".join(re.findall(pattern, data.lower())).lstrip("0123456789")
 
 
-def get_unique_truncated_appid(app: AppDef) -> str:
+def get_unique_truncated_appid(app: AppDef, use_indexed_jobs: bool) -> str:
     """
     Some Kubernetes objects need to have names that are
     63 characters or less. When creating the unique app_id,
@@ -590,7 +595,8 @@ def get_unique_truncated_appid(app: AppDef) -> str:
     uid_chars = 4
     pg_chars = 3 + len(app.roles)
     job_chars = 0
-    if KUBERNETES_INDEXED_JOBS is True:
+    #if KUBERNETES_INDEXED_JOBS is True:
+    if use_indexed_jobs is True:
         num_jobs = len(app.roles) + 1
         job_chars = 10 + num_jobs
     size = 63 - (len(app.name) + uid_chars + pg_chars + job_chars)
@@ -646,6 +652,7 @@ def create_pod_objects(
     app: AppDef,
     unique_app_id: str,
     namespace: str,
+    use_indexed_jobs: bool,
     service_account: Optional[str],
     image_secret: Optional[str],
     coscheduler_name: Optional[str],
@@ -677,6 +684,7 @@ def create_pod_objects(
                 unique_app_id,
                 namespace,
                 replica_role,
+                use_indexed_jobs,
                 service_account,
                 image_secret,
                 coscheduler_name,
@@ -707,6 +715,7 @@ def create_job_objects(
     unique_app_id: str,
     namespace: str,
     mcad_svc_name: str,
+    use_indexed_jobs: bool,
     service_account: Optional[str],
     image_secret: Optional[str],
     coscheduler_name: Optional[str],
@@ -737,6 +746,7 @@ def create_job_objects(
             unique_app_id,
             namespace,
             replica_role,
+            use_indexed_jobs,
             service_account,
             image_secret,
             coscheduler_name,
@@ -765,6 +775,7 @@ def create_job_objects(
                 unique_app_id,
                 namespace,
                 replica_role_rank0,
+                use_indexed_jobs,
                 service_account,
                 image_secret,
                 coscheduler_name,
@@ -827,18 +838,21 @@ def create_compute_objects(
     unique_app_id: str,
     namespace: str,
     mcad_svc_name: str,
+    use_indexed_jobs: bool,
     service_account: Optional[str],
     image_secret: Optional[str],
     coscheduler_name: Optional[str],
     priority_class_name: Optional[str],
     network: Optional[str],
 ) -> List[TypeVar]:
-    if KUBERNETES_INDEXED_JOBS is True:
+    #if KUBERNETES_INDEXED_JOBS is True:
+    if use_indexed_jobs is True:
         genericitems = create_job_objects(
             app=app,
             unique_app_id=unique_app_id,
             namespace=namespace,
             mcad_svc_name=mcad_svc_name,
+            use_indexed_jobs=use_indexed_jobs,
             service_account=service_account,
             image_secret=image_secret,
             coscheduler_name=coscheduler_name,
@@ -851,6 +865,7 @@ def create_compute_objects(
             app=app,
             unique_app_id=unique_app_id,
             namespace=namespace,
+            use_indexed_jobs=use_indexed_jobs,
             service_account=service_account,
             image_secret=image_secret,
             coscheduler_name=coscheduler_name,
@@ -863,6 +878,7 @@ def create_compute_objects(
 def app_to_resource(
     app: AppDef,
     namespace: str,
+    use_indexed_jobs: bool,
     service_account: Optional[str],
     image_secret: Optional[str],
     coscheduler_name: Optional[str],
@@ -882,7 +898,7 @@ def app_to_resource(
 
     genericitems = []
 
-    unique_app_id = get_unique_truncated_appid(app)
+    unique_app_id = get_unique_truncated_appid(app, use_indexed_jobs)
 
     if coscheduler_name is not None:
         for role_idx, role in enumerate(app.roles):
@@ -914,6 +930,7 @@ def app_to_resource(
         app=app,
         unique_app_id=unique_app_id,
         namespace=namespace,
+        use_indexed_jobs=use_indexed_jobs, 
         mcad_svc_name=svc_obj.metadata.name,
         service_account=service_account,
         image_secret=image_secret,
@@ -1344,8 +1361,9 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         from kubernetes import client
 
         namespace, name = app_id.split(":")
-        self._check_kubernetes_version()
-        if KUBERNETES_INDEXED_JOBS is False:
+        #self._check_kubernetes_version()
+        indexed_jobs = self._check_supports_indexed_jobs()
+        if indexed_jobs is False:
             pod_name = cleanup_str(f"{name}-{k}")
             return pod_name
         else:
@@ -1430,9 +1448,10 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         # images_to_push = self._update_app_images(app, cfg.get("image_repo"))
         images_to_push = self.dryrun_push_images(app, cast(Mapping[str, CfgVal], cfg))
 
-        version_info = self._get_kubernetes_version()
-        if version_info["major"] >= 1 and version_info["minor"] >= 21:
-            globals()["KUBERNETES_INDEXED_JOBS"] = True
+        #version_info = self._get_kubernetes_version()
+        #if version_info["major"] >= 1 and version_info["minor"] >= 21:
+        #    globals()["KUBERNETES_INDEXED_JOBS"] = True
+        use_indexed_jobs = self._check_supports_indexed_jobs()
 
         service_account = cfg.get("service_account")
         assert service_account is None or isinstance(
@@ -1472,6 +1491,7 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
         resource = app_to_resource(
             app=app,
             namespace=namespace,
+            use_indexed_jobs=use_indexed_jobs,
             service_account=service_account,
             image_secret=image_secret,
             coscheduler_name=coscheduler_name,
@@ -1577,9 +1597,10 @@ class KubernetesMCADScheduler(DockerWorkspaceMixin, Scheduler[KubernetesMCADOpts
             else:
                 raise
 
-        self._check_kubernetes_version()
-
-        if KUBERNETES_INDEXED_JOBS is True:
+        #self._check_kubernetes_version()
+        indexed_jobs = self._check_supports_indexed_jobs() 
+        
+        if indexed_jobs is True:
             from kubernetes.client import BatchV1Api
 
             batch_api = BatchV1Api(self._client)
