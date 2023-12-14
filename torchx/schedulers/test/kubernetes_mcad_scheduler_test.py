@@ -708,6 +708,175 @@ spec:
 """,
         )
 
+    @patch("torchx.schedulers.kubernetes_mcad_scheduler.KubernetesMCADScheduler._check_supports_indexed_jobs")
+    def test_submit_dryrun_jobs(self, check_supports_indexed_jobs: MagicMock) -> None:
+        scheduler = create_scheduler("test")
+        app = _test_app()
+        check_supports_indexed_jobs.return_value = True
+        cfg = KubernetesMCADOpts(
+            {
+                "priority": 0,
+                "namespace": "test_namespace",
+                "coscheduler_name": "test_coscheduler",
+                "network": "test-network-conf",
+            }
+        )
+        with patch(
+            "torchx.schedulers.kubernetes_mcad_scheduler.make_unique"
+        ) as make_unique_ctx:
+            make_unique_ctx.return_value = "app-name"
+            info = scheduler._submit_dryrun(app, cfg)
+
+        resource = str(info.request)
+        reference = """apiVersion: workload.codeflare.dev/v1beta1
+kind: AppWrapper
+metadata:
+  name: app-name
+  namespace: test_namespace
+spec:
+  priority: 0
+  resources:
+    GenericItems:
+    - generictemplate:
+        apiVersion: scheduling.sigs.k8s.io/v1alpha1
+        kind: PodGroup
+        metadata:
+          labels:
+            app.kubernetes.io/instance: app-name
+            app.kubernetes.io/managed-by: torchx.pytorch.org
+            app.kubernetes.io/name: test
+            appwrapper.workload.codeflare.dev: app-name
+          name: app-name-pg0
+          namespace: test_namespace
+        spec:
+          minMember: 1
+      replicas: 1
+    - generictemplate:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          labels:
+            app.kubernetes.io/instance: app-name
+            app.kubernetes.io/managed-by: torchx.pytorch.org
+            app.kubernetes.io/name: test
+          name: app-name
+          namespace: test_namespace
+        spec:
+          clusterIP: None
+          ports:
+          - port: 1234
+            protocol: TCP
+            targetPort: 1234
+          publishNotReadyAddresses: true
+          selector:
+            app.kubernetes.io/instance: app-name
+          sessionAffinity: None
+          type: ClusterIP
+        status:
+          loadBalancer: {}
+      replicas: 1
+    - completionstatus: Complete,Failed
+      generictemplate:
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          labels:
+            appwrapper.workload.codeflare.dev: app-name
+          name: app-name-job0
+          namespace: test_namespace
+        spec:
+          backoffLimit: 0
+          completionMode: Indexed
+          completions: 1
+          parallelism: 1
+          template:
+            metadata:
+              annotations:
+                k8s.v1.cni.cncf.io/networks: test-network-conf
+                sidecar.istio.io/inject: 'false'
+              labels:
+                app.kubernetes.io/instance: app-name
+                app.kubernetes.io/managed-by: torchx.pytorch.org
+                app.kubernetes.io/name: test
+                pod-group.scheduling.sigs.k8s.io: app-name-pg0
+                torchx.pytorch.org/app-name: test
+                torchx.pytorch.org/replica-id: '0'
+                torchx.pytorch.org/role-index: '0'
+                torchx.pytorch.org/role-name: trainer_foo
+                torchx.pytorch.org/version: 0.7.0dev0
+              namespace: test_namespace
+            spec:
+              containers:
+              - command:
+                - main
+                - --output-path
+                - ''
+                - --app-id
+                - app-name
+                - --rank0-env
+                - TORCHX_RANK0_HOST
+                env:
+                - name: FOO
+                  value: bar
+                - name: TORCHX_RANK0_HOST
+                  value: localhost
+                - name: TORCHX_MCAD_TRAINERFOO_0_HOSTS
+                  value: app-name-job0-0.app-name
+                image: pytorch/torchx:latest
+                name: app-name-c
+                ports:
+                - containerPort: 1234
+                  name: foo
+                resources:
+                  limits:
+                    cpu: 2000m
+                    memory: 3000M
+                    nvidia.com/gpu: '4'
+                  requests:
+                    cpu: 1900m
+                    memory: 1976M
+                    nvidia.com/gpu: '4'
+                securityContext: {}
+                volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm
+                - mountPath: /dst
+                  name: mount-0
+                  readOnly: true
+              imagePullSecrets:
+              - {}
+              initContainers:
+              - args:
+                - -c
+                - print('Pulled container image')
+                command:
+                - python
+                image: pytorch/torchx:latest
+                name: image-pull-container
+              nodeSelector: {}
+              restartPolicy: Never
+              schedulerName: test_coscheduler
+              subdomain: app-name
+              volumes:
+              - emptyDir:
+                  medium: Memory
+                name: dshm
+              - hostPath:
+                  path: /src
+                name: mount-0
+      replicas: 1
+  schedulingSpec:
+    minAvailable: 1
+    requeuing:
+      growthType: exponential
+      maxNumRequeuings: 3
+      maxTimeInSeconds: 0
+      timeInSeconds: 300
+"""       
+        self.assertEqual(
+            resource,
+            reference)
+
     @patch("kubernetes.client.CustomObjectsApi.get_namespaced_custom_object")
     def test_get_role_information(
         self, get_namespaced_custom_object: MagicMock
