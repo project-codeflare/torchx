@@ -1665,8 +1665,9 @@ spec:
         with self.assertRaises(ValueError):
             scheduler.schedule(info)
 
+    @patch("torchx.schedulers.kubernetes_mcad_scheduler.KubernetesMCADScheduler._check_supports_indexed_jobs")
     @patch("kubernetes.client.CustomObjectsApi.get_namespaced_custom_object")
-    def test_describe(self, get_namespaced_custom_object: MagicMock) -> None:
+    def test_describe(self, get_namespaced_custom_object: MagicMock, check_supports_indexed_jobs: MagicMock) -> None:
         get_namespaced_custom_object.return_value = {
             "status": {
                 "state": "Running",
@@ -1689,6 +1690,8 @@ spec:
                 },
             },
         }
+
+        check_supports_indexed_jobs.return_value = False
 
         app_id = "foo:bar"
         scheduler = create_scheduler("foo")
