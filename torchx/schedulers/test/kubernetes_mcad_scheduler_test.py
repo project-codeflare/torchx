@@ -1476,8 +1476,11 @@ spec:
             },
         )
 
-    def test_rank0_env(self) -> None:
+    @patch("torchx.schedulers.kubernetes_mcad_scheduler.KubernetesMCADScheduler._check_supports_indexed_jobs")
+    def test_rank0_env(self, check_supports_indexed_jobs: MagicMock) -> None:
         from kubernetes.client.models import V1EnvVar
+
+        check_supports_indexed_jobs.return_value = False
 
         scheduler = create_scheduler("test")
         app = _test_app(num_replicas=2)
@@ -1490,12 +1493,29 @@ spec:
 
         # pyre-fixme
         tasks = info.request.resource["spec"]["resources"]["GenericItems"]
-        container0 = tasks[0]["generictemplate"].spec.containers[0]
+        container0 = tasks[1]["generictemplate"].spec.containers[0]
         self.assertIn("TORCHX_RANK0_HOST", container0.command)
         self.assertIn(
             V1EnvVar(name="TORCHX_RANK0_HOST", value="localhost"), container0.env
         )
-        container1 = tasks[1]["generictemplate"].spec.containers[0]
+        container1 = tasks[2]["generictemplate"].spec.containers[0]
+        self.assertIn("TORCHX_MCAD_TRAINERFOO_0_HOSTS", container1.command)
+
+        check_supports_indexed_jobs.return_value = True
+        with patch(
+            "torchx.schedulers.kubernetes_mcad_scheduler.make_unique"
+        ) as make_unique_ctx:
+            make_unique_ctx.return_value = "app-name"
+            info2 = scheduler._submit_dryrun(app, cfg)
+
+        # pyre-fixme        
+        tasks = info2.request.resource["spec"]["resources"]["GenericItems"]
+        container0 = tasks[1]["generictemplate"].spec.template.spec.containers[0]
+        self.assertIn("TORCHX_RANK0_HOST", container0.command)
+        self.assertIn(
+            V1EnvVar(name="TORCHX_RANK0_HOST", value="localhost"), container0.env
+        )
+        container1 = tasks[2]["generictemplate"].spec.template.spec.containers[0]
         self.assertIn("TORCHX_MCAD_TRAINERFOO_0_HOSTS", container1.command)
 
     def test_submit_dryrun_patch(self) -> None:
