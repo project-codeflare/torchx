@@ -556,9 +556,11 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
         expect = {"running": "1", "pending": "2", "failed": "3", "Succeeded": "4"}
         self.assertEqual(results, expect)
 
-    def test_submit_dryrun(self) -> None:
+    @patch("torchx.schedulers.kubernetes_mcad_scheduler.KubernetesMCADScheduler._check_supports_indexed_jobs")
+    def test_submit_dryrun_pods(self, check_supports_indexed_jobs: MagicMock) -> None:
         scheduler = create_scheduler("test")
         app = _test_app()
+        check_supports_indexed_jobs.return_value = False
         cfg = KubernetesMCADOpts(
             {
                 "priority": 0,
@@ -599,6 +601,30 @@ spec:
           namespace: test_namespace
         spec:
           minMember: 1
+      replicas: 1
+    - generictemplate:
+        apiVersion: v1
+        kind: Service
+        metadata:
+          labels:
+            app.kubernetes.io/instance: app-name
+            app.kubernetes.io/managed-by: torchx.pytorch.org
+            app.kubernetes.io/name: test
+          name: app-name
+          namespace: test_namespace
+        spec:
+          clusterIP: None
+          ports:
+          - port: 1234
+            protocol: TCP
+            targetPort: 1234
+          publishNotReadyAddresses: true
+          selector:
+            app.kubernetes.io/instance: app-name
+          sessionAffinity: None
+          type: ClusterIP
+        status:
+          loadBalancer: {{}}
       replicas: 1
     - generictemplate:
         apiVersion: v1
@@ -671,30 +697,6 @@ spec:
           - hostPath:
               path: /src
             name: mount-0
-      replicas: 1
-    - generictemplate:
-        apiVersion: v1
-        kind: Service
-        metadata:
-          labels:
-            app.kubernetes.io/instance: app-name
-            app.kubernetes.io/managed-by: torchx.pytorch.org
-            app.kubernetes.io/name: test
-          name: app-name
-          namespace: test_namespace
-        spec:
-          clusterIP: None
-          ports:
-          - port: 1234
-            protocol: TCP
-            targetPort: 1234
-          publishNotReadyAddresses: true
-          selector:
-            app.kubernetes.io/instance: app-name
-          sessionAffinity: None
-          type: ClusterIP
-        status:
-          loadBalancer: {{}}
       replicas: 1
   schedulingSpec:
     minAvailable: 1
