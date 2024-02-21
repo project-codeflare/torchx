@@ -175,11 +175,13 @@ def role_to_pod(
     network: Optional[str],
 ) -> "V1Pod":
     from kubernetes.client.models import (  # noqa: F811 redefinition of unused
+        V1ConfigMapVolumeSource,
         V1Container,
         V1ContainerPort,
         V1EmptyDirVolumeSource,
         V1EnvVar,
         V1HostPathVolumeSource,
+        V1KeyToPath,
         V1LocalObjectReference,
         V1ObjectMeta,
         V1PersistentVolumeClaimVolumeSource,
@@ -233,9 +235,47 @@ def role_to_pod(
                 medium="Memory",
             ),
         ),
+        V1Volume(
+            name="odh-trusted-ca-cert",
+            config_map=V1ConfigMapVolumeSource(
+                name="odh-trusted-ca-bundle",
+                items=[
+                    V1KeyToPath(key="ca-bundle.crt", path="odh-custom-ca-bundle.crt")
+                ],
+                optional=True,
+            ),
+        ),
+        V1Volume(
+            name="odh-ca-cert",
+            config_map=V1ConfigMapVolumeSource(
+                name="odh-trusted-ca-bundle",
+                items=[V1KeyToPath(key="odh-ca-bundle.crt", path="odh-ca-bundle.crt")],
+                optional=True,
+            ),
+        ),
     ]
     volume_mounts = [
         V1VolumeMount(name=SHM_VOL, mount_path="/dev/shm"),
+        V1VolumeMount(
+            name="odh-trusted-ca-cert",
+            sub_path="odh-trusted-ca-bundle.crt",
+            mount_path="/etc/pki/tls/certs/odh-trusted-ca-bundle.crt",
+        ),
+        V1VolumeMount(
+            name="odh-trusted-ca-cert",
+            sub_path="odh-trusted-ca-bundle.crt",
+            mount_path="/etc/ssl/certs/odh-trusted-ca-bundle.crt",
+        ),
+        V1VolumeMount(
+            name="odh-ca-cert",
+            sub_path="odh-ca-bundle.crt",
+            mount_path="/etc/pki/tls/certs/odh-ca-bundle.crt",
+        ),
+        V1VolumeMount(
+            name="odh-ca-cert",
+            sub_path="odh-ca-bundle.crt",
+            mount_path="/etc/ssl/certs/odh-ca-bundle.crt",
+        ),
     ]
     security_context = V1SecurityContext()
 
