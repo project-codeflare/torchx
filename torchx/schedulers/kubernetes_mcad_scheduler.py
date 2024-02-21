@@ -177,11 +177,13 @@ def role_to_pod(
     network: Optional[str],
 ) -> "V1Pod":
     from kubernetes.client.models import (  # noqa: F811 redefinition of unused
+        V1ConfigMapVolumeSource,
         V1Container,
         V1ContainerPort,
         V1EmptyDirVolumeSource,
         V1EnvVar,
         V1HostPathVolumeSource,
+        V1KeyToPath,
         V1LocalObjectReference,
         V1ObjectMeta,
         V1PersistentVolumeClaimVolumeSource,
@@ -191,8 +193,6 @@ def role_to_pod(
         V1SecurityContext,
         V1Volume,
         V1VolumeMount,
-        V1ConfigMapVolumeSource,
-        V1KeyToPath,
     )
 
     # limits puts an upper cap on the resources a pod may consume.

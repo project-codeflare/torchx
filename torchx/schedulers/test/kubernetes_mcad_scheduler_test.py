@@ -243,11 +243,13 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
 
     def test_role_to_pod(self) -> None:
         from kubernetes.client.models import (
+            V1ConfigMapVolumeSource,
             V1Container,
             V1ContainerPort,
             V1EmptyDirVolumeSource,
             V1EnvVar,
             V1HostPathVolumeSource,
+            V1KeyToPath,
             V1LocalObjectReference,
             V1ObjectMeta,
             V1Pod,
@@ -256,8 +258,6 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
             V1SecurityContext,
             V1Volume,
             V1VolumeMount,
-            V1ConfigMapVolumeSource,
-            V1KeyToPath,
         )
 
         app = _test_app()
@@ -1332,12 +1332,12 @@ spec:
     def test_volume_mounts(self) -> None:
         scheduler = create_scheduler("test")
         from kubernetes.client.models import (
+            V1ConfigMapVolumeSource,
             V1EmptyDirVolumeSource,
+            V1KeyToPath,
             V1PersistentVolumeClaimVolumeSource,
             V1Volume,
             V1VolumeMount,
-            V1ConfigMapVolumeSource,
-            V1KeyToPath,
         )
 
         role = specs.Role(
@@ -1437,11 +1437,11 @@ spec:
     def test_device_mounts(self) -> None:
         scheduler = create_scheduler("test")
         from kubernetes.client.models import (
+            V1ConfigMapVolumeSource,
             V1HostPathVolumeSource,
+            V1KeyToPath,
             V1Volume,
             V1VolumeMount,
-            V1ConfigMapVolumeSource,
-            V1KeyToPath,
         )
 
         role = specs.Role(
