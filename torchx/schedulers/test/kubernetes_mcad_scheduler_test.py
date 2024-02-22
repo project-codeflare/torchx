@@ -365,7 +365,8 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
                             name="odh-trusted-ca-bundle",
                             items=[
                                 V1KeyToPath(
-                                    key="ca-bundle.crt", path="odh-trusted-ca-bundle.crt"
+                                    key="ca-bundle.crt",
+                                    path="odh-trusted-ca-bundle.crt",
                                 )
                             ],
                             optional=True,
