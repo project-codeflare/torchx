@@ -365,7 +365,7 @@ class KubernetesMCADSchedulerTest(unittest.TestCase):
                             name="odh-trusted-ca-bundle",
                             items=[
                                 V1KeyToPath(
-                                    key="ca-bundle.crt", path="odh-custom-ca-bundle.crt"
+                                    key="ca-bundle.crt", path="odh-trusted-ca-bundle.crt"
                                 )
                             ],
                             optional=True,
@@ -702,7 +702,7 @@ spec:
           - configMap:
               items:
               - key: ca-bundle.crt
-                path: odh-custom-ca-bundle.crt
+                path: odh-trusted-ca-bundle.crt
               name: odh-trusted-ca-bundle
               optional: true
             name: odh-trusted-ca-cert
@@ -1371,7 +1371,7 @@ spec:
                         name="odh-trusted-ca-bundle",
                         items=[
                             V1KeyToPath(
-                                key="ca-bundle.crt", path="odh-custom-ca-bundle.crt"
+                                key="ca-bundle.crt", path="odh-trusted-ca-bundle.crt"
                             )
                         ],
                         optional=True,
@@ -1470,7 +1470,7 @@ spec:
                         name="odh-trusted-ca-bundle",
                         items=[
                             V1KeyToPath(
-                                key="ca-bundle.crt", path="odh-custom-ca-bundle.crt"
+                                key="ca-bundle.crt", path="odh-trusted-ca-bundle.crt"
                             )
                         ],
                         optional=True,

@@ -240,7 +240,7 @@ def role_to_pod(
             config_map=V1ConfigMapVolumeSource(
                 name="odh-trusted-ca-bundle",
                 items=[
-                    V1KeyToPath(key="ca-bundle.crt", path="odh-custom-ca-bundle.crt")
+                    V1KeyToPath(key="ca-bundle.crt", path="odh-trusted-ca-bundle.crt")
                 ],
                 optional=True,
             ),
